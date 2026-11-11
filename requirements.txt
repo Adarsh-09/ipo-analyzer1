@@ -47,3 +47,4 @@ pytest-cov>=4.1.0
 # Notebook Exploration Environment
 jupyter>=1.0.0
 ipykernel>=6.26.0
+

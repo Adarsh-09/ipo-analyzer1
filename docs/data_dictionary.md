@@ -98,3 +98,4 @@ Tracks the evolution of unofficial grey market premium quotes over the pre-listi
 - **Price Sanity:** `issue_price > 0`, `listing_open_price > 0`.
 - **Issue Size Consistency:** If both present, `fresh_issue_cr + ofs_cr` $\approx$ `issue_size_cr`.
 - **Subscription Positivity:** Subscriptions cannot be negative; `overall_subscription >= 0`.
+

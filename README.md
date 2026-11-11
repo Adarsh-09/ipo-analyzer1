@@ -261,3 +261,4 @@ This project demonstrates core competencies required of a modern Machine Learnin
 
 ## 10. Legal Disclaimer
 *IPOVision is developed solely for educational and research purposes. It does not provide investment advice or securities recommendations. Predictions are statistical estimates, not financial guarantees.*
+

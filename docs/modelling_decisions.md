@@ -96,3 +96,4 @@ Because retail investors face asymmetric risk (losing capital on unexpected list
   - **Mean Absolute Error (MAE):** Average error in percentage points.
   - **Root Mean Squared Error (RMSE):** Penalizes extreme mispredictions.
   - **Directional Accuracy:** Percentage of cases where predicted sign matches actual sign.
+
