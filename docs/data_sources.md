@@ -25,3 +25,4 @@ Based on empirical testing conducted during Phase 1 across 10 candidates, the fo
 2. **Chittorgarh Subscription Status:** Bidding breakdown tables are paywalled under "IPOMatrix". We source subscription multiples cleanly from InvestorGain.
 3. **Grey Market Premium (GMP):** Unofficial market quote. It is recorded with timestamp and source. Missing GMP is **never filled with 0.0**.
 4. **Mainboard vs SME:** Sources often interleave SME issues. Mainboard filtering is enforced (`is_sme == False`, issue size >= 50 Cr).
+

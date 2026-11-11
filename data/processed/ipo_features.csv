@@ -1,1 +1,2 @@
 ipo_id,company_name,symbol,exchange,issue_open_date,issue_close_date,issue_price,price_band_low,price_band_high,issue_size_cr,fresh_issue_cr,ofs_cr,listing_date,revenue,revenue_period,profit_after_tax,pat_period,ebitda,ebitda_period,total_debt,net_worth,cash_flow_from_operations,eps,nav,pe_ratio,pb_ratio,peer_pe_ratio,peer_pb_ratio,qib_subscription,nii_subscription,retail_subscription,overall_subscription,gmp,gmp_change,gmp_source,gmp_recorded_at,gmp_missing,prediction_stage,data_cutoff
+

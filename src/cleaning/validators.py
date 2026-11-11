@@ -982,3 +982,4 @@ def check_referential_integrity(
                 )
 
     return issues
+
