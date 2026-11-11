@@ -1,0 +1,132 @@
+# ==============================================================================
+# IPOVision — Master Configuration
+# Copy this file to 'config/settings.yaml' for local modifications.
+# ==============================================================================
+
+project:
+  name: "IPOVision"
+  version: "1.0.0"
+  tagline: "Data-driven intelligence for Indian Mainboard IPO listing analysis"
+  market: "Indian Mainboard IPOs Only"
+
+paths:
+  data_raw: "data/raw"
+  data_interim: "data/interim"
+  data_processed: "data/processed"
+  models_dir: "models"
+  reports_dir: "reports"
+  figures_dir: "reports/figures"
+  evaluation_dir: "reports/evaluation"
+  chroma_db_dir: "chroma_db"
+
+scraping:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+  timeout_seconds: 15
+  max_retries: 3
+  rate_limit_delay_seconds: 2.0
+  verify_ssl: true
+
+datasets:
+  features_filename: "ipo_features.csv"
+  outcomes_filename: "ipo_outcomes.csv"
+  gmp_history_filename: "ipo_gmp_history.csv"
+
+ml_pipeline:
+  random_seed: 42
+  primary_outcome: "listing_open_price"
+  target_classification: "listing_positive"
+  target_regression: "listing_gain_pct"
+
+  validation:
+    strategy: "chronological_walk_forward" # Avoid random K-Fold to prevent time leakage
+    n_splits: 4
+    min_train_samples: 30
+
+  pre_close:
+    description: "Features strictly available BEFORE IPO subscription closes"
+    forbidden_features:
+      - "qib_subscription"
+      - "nii_subscription"
+      - "retail_subscription"
+      - "overall_subscription"
+      - "listing_open_price"
+      - "listing_close_price"
+      - "listing_gain_pct"
+      - "listing_positive"
+    allowed_features:
+      - "issue_price"
+      - "issue_size_cr"
+      - "fresh_issue_cr"
+      - "ofs_cr"
+      - "fresh_ratio"
+      - "revenue"
+      - "profit_after_tax"
+      - "ebitda"
+      - "ebitda_margin"
+      - "pat_margin"
+      - "total_debt"
+      - "debt_to_equity"
+      - "pe_ratio"
+      - "pb_ratio"
+      - "peer_pe_ratio"
+      - "pe_premium_discount"
+      - "gmp"
+      - "gmp_pct"
+      - "gmp_trend"
+      - "market_trend_pre_close"
+
+  post_close:
+    description: "Features available AFTER IPO subscription closes (includes final subscriptions)"
+    forbidden_features:
+      - "listing_open_price"
+      - "listing_close_price"
+      - "listing_gain_pct"
+      - "listing_positive"
+    allowed_features:
+      - "issue_price"
+      - "issue_size_cr"
+      - "fresh_issue_cr"
+      - "ofs_cr"
+      - "fresh_ratio"
+      - "revenue"
+      - "profit_after_tax"
+      - "ebitda"
+      - "ebitda_margin"
+      - "pat_margin"
+      - "total_debt"
+      - "debt_to_equity"
+      - "pe_ratio"
+      - "pb_ratio"
+      - "peer_pe_ratio"
+      - "pe_premium_discount"
+      - "gmp"
+      - "gmp_pct"
+      - "gmp_trend"
+      - "market_trend_pre_close"
+      - "qib_subscription"
+      - "nii_subscription"
+      - "retail_subscription"
+      - "overall_subscription"
+      - "qib_to_retail_ratio"
+      - "final_gmp"
+      - "final_gmp_pct"
+
+rag_engine:
+  chroma_collection: "ipo_prospectus_chunks"
+  embedding_model: "all-MiniLM-L6-v2"
+  chunk_size_words: 400
+  chunk_overlap_words: 60
+  top_k_retrieval: 5
+  hybrid_search:
+    enabled: true
+    dense_weight: 0.6
+    bm25_weight: 0.4
+  gemini:
+    model_name: "gemini-1.5-flash"
+    temperature: 0.1 # Low temperature for factual financial citation
+    max_tokens: 2048
+
+dashboard:
+  theme: "light"
+  layout: "wide"
+  initial_sidebar_state: "expanded"

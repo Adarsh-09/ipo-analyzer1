@@ -1,0 +1,94 @@
+# Python Bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDE / Editor configuration
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Vector Store and RAG artifacts
+chroma_db/
+*.chroma
+vector_store/
+temp_uploads/
+*.pdf
+
+# Model binary weights (allow directory structure via .gitkeep)
+models/*.joblib
+models/*.pkl
+models/*.onnx
+models/*.bin
+!models/.gitkeep
+
+# Large Data files (Keep schemas & gitkeeps, ignore raw scraped files)
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+!data/processed/*.sample.csv
+!data/processed/data_dictionary.md
+
+# Reports generated figures
+reports/figures/*
+!reports/figures/.gitkeep
+reports/evaluation/*
+!reports/evaluation/.gitkeep
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
