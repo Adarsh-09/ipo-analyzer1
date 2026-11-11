@@ -1,0 +1,11 @@
+source_name,url,category,http_status,success,response_time_ms,tables_found,notes
+Chittorgarh IPO Listing Performance,https://www.chittorgarh.com/report/ipo-listing-day-performance/82/,ipo_listing,200,True,815.852,0,Found 0 tables. Page size: 128 KB.
+Chittorgarh IPO Detail Page,https://www.chittorgarh.com/ipo/swiggy-ipo/1670/,ipo_detail,200,True,179.84,16,Found 16 tables with detail data. Fields detected: 15. Page size: 332 KB.
+Chittorgarh GMP Page,https://www.chittorgarh.com/report/ipo-grey-market-premium-latest-mainboard-ipo-gmp/82/,gmp,200,True,111.849,0,Found 0 tables. Page size: 128 KB.
+Chittorgarh Subscription Status,https://www.chittorgarh.com/report/ipo-subscription-status-live-bidding-data/21/,subscription,200,True,112.328,0,"Found 0 tables. Fields: ['qib', 'nii_hni', 'retail', 'total_subscription', 'application_count']"
+Chittorgarh IPO Financials (Tata Technologies),https://www.chittorgarh.com/ipo/tata-technologies-ipo/1577/,financials,200,True,139.21,14,Found 14 tables. Financial fields detected: 9. Page size: 290 KB.
+Chittorgarh Mainboard IPO Archive,https://www.chittorgarh.com/report/mainboard-ipo-list-in-india-702/82/,ipo_listing,200,True,110.61200000000001,0,Found 0 tables. Largest table has ~0 data rows. Page size: 128 KB.
+InvestorGain IPO GMP,https://www.investorgain.com/report/live-ipo-gmp/331/,gmp,200,True,61.152,1,Found 1 tables. Page size: 272 KB.
+NSE India IPO Page,https://www.nseindia.com/market-data/all-upcoming-issues-ipo,ipo_listing,200,True,1845.097,2,Page size: 305 KB. Tables found: 2. IPO data in static HTML: Yes.
+BSE India IPO Page,https://www.bseindia.com/publicissue.html,ipo_listing,200,True,69.632,0,Page size: 17 KB. Tables found: 0.
+SEBI Offer Documents,https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=2&ssid=21&smession=No,rhp_drhp,200,True,2284.949,0,Page size: 20 KB. Tables: 0. PDF links found: 0.

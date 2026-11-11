@@ -81,6 +81,11 @@ data/processed/*
 !data/processed/.gitkeep
 !data/processed/*.sample.csv
 !data/processed/data_dictionary.md
+!data/processed/ipo_features.csv
+!data/processed/ipo_outcomes.csv
+!data/processed/ipo_gmp_history.csv
+!data/processed/ipo_feature_sources.csv
+!data/processed/ipo_registry.csv
 
 # Reports generated figures
 reports/figures/*

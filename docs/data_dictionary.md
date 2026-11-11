@@ -1,101 +1,152 @@
-# IPOVision — Data Dictionary & Schema Specification
+# IPOVision — Comprehensive Data Dictionary & Schema Specification
 
-**Document Version:** 1.0.0  
-**Target Market:** Indian Mainboard IPOs Only  
-**Purpose:** Defines the exact schema, data types, units, missing-value policies, and prediction-stage applicability for all datasets maintained in IPOVision.
+**Document Version:** 2.0.0  
+**Phase:** 2 (Dataset Construction)  
+**Target Market:** Indian Mainboard IPOs Only (NSE/BSE)  
+**Identifier Convention:** `INMAIN-YYYY-NNNN`  
 
 ---
 
-## 1. Core Data Principles
+## 1. Architectural Foundations
 
-1. **Explicit Missingness:** Never replace missing values (e.g. absent GMP or missing subscription rates) with `0`. Always represent absent values as `NaN` or `None`.
-2. **Stable Identifier (`ipo_id`):** Every IPO is assigned a deterministic identifier formatted as:  
-   `YYYY-SYMBOL` (e.g. `2024-TATACHEV`, `2024-SWIGGY`, `2024-HYUNDAI`).
-3. **Consistent Financial Units:**
-   - Financial statement metrics (`revenue`, `profit_after_tax`, `ebitda`, `total_debt`, `issue_size_cr`, `fresh_issue_cr`, `ofs_cr`): Expressed strictly in **₹ Crore (INR Cr)**.
-   - Per-share metrics (`issue_price`, `gmp`, `listing_open_price`, `listing_close_price`): Expressed strictly in **₹ (INR)** per equity share.
-   - Valuation multiples (`pe_ratio`, `pb_ratio`): Expressed as pure numerical ratios (e.g. `42.5`).
-   - Subscription metrics: Expressed as multiple of subscription (e.g. `15.4x`).
-4. **Time-Cutoff Rigor (Leakage Prevention):**
-   - Every observation in `ipo_features.csv` must record the exact `data_cutoff` timestamp.
-   - Pre-close features cannot contain any post-close data (such as final subscriptions).
-   - Neither stage can contain listing outcome data.
+### 1.1 Multi-Stage Prediction Design
+To prevent future look-ahead data leakage in predictive modeling, IPOVision physically separates data into two distinct stages:
+1. **Pre-Close (`pre_close`):** Captured strictly *before* the issue subscription period closes. All subscription bidding figures (`qib_subscription`, `nii_subscription`, `retail_subscription`, `overall_subscription`) **MUST BE NaN / None**. Any presence of subscription figures in this stage is treated as a fatal leakage error.
+2. **Post-Close (`post_close`):** Captured *after* subscription closes but *before* listing morning. Final subscription multiples are permitted and populated.
+
+### 1.2 Ground Truth Outcomes
+Listing outcome targets (`listing_open_price`, `listing_gain_pct`, `listing_positive`) are stored in an independent dataset (`ipo_outcomes.csv`) and must **never** be used as feature inputs for predictions.
+
+### 1.3 Missing Data Policy
+1. **Grey Market Premium (GMP):** Unofficial market quote. Missing GMP is **never replaced with zero (0.0)**. It is stored as `NaN`, accompanied by `gmp_missing = 1`.
+2. **Loss-Making Fundamentals:** Negative PAT, negative EBITDA, or negative operating cash flow are legitimate business values (e.g. tech startups) and are never rejected as invalid.
+3. **Financial Periods:** All financial statement metrics (`revenue`, `profit_after_tax`, `ebitda`) are bound to explicit period descriptors (`revenue_period`, `pat_period`, `ebitda_period`), e.g., `FY2024`, `FY2023`, `9MFY24`. Annual and interim figures are never mixed without metadata.
 
 ---
 
 ## 2. Table Specifications
 
-### A. `ipo_features.csv` (Features Dataset)
-Contains pre-listing data captured at a defined prediction cutoff.
+### A. `ipo_features.csv` (Primary Feature Store)
+Contains IPO issue characteristics, company fundamentals, valuation multiples, subscription statistics, and sentiment metrics frozen at a specific `data_cutoff`.
 
-| Field Name | Type | Unit / Format | Description | Missing Value Policy | Stage Applicability | Primary Source |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `ipo_id` | string | `YYYY-SYMBOL` | Unique stable identifier for the IPO issue | Required (Primary Key) | Both | Master Registry |
-| `company_name` | string | Text | Registered name of the issuing company | Required | Both | SEBI / Exchange |
-| `symbol` | string | Text | NSE/BSE trading ticker symbol | Required if listed | Both | NSE / BSE |
-| `issue_open_date` | date | `YYYY-MM-DD` | Date on which the issue opened for subscription | Required | Both | RHP / Exchange |
-| `issue_close_date` | date | `YYYY-MM-DD` | Date on which the issue closed for subscription | Required | Both | RHP / Exchange |
-| `issue_price` | float | ₹ (INR) | Final issue/offer price per equity share | Required | Both | Basis of Allotment / Exchange |
-| `issue_size_cr` | float | ₹ Crore | Total issue size (Fresh + OFS) | Required | Both | RHP / Exchange |
-| `fresh_issue_cr` | float | ₹ Crore | Portion raised via new equity shares | Nullable (`NaN` if 100% OFS) | Both | RHP / Prospectus |
-| `ofs_cr` | float | ₹ Crore | Offer for Sale portion by existing shareholders | Nullable (`NaN` if 100% Fresh) | Both | RHP / Prospectus |
-| `revenue` | float | ₹ Crore | Total revenue / revenue from operations for the latest reported FY | Nullable (`NaN` if unverified) | Both | RHP / Restated Financials |
-| `profit_after_tax` | float | ₹ Crore | Restated Net Profit After Tax for latest reported FY | Nullable (`NaN` if loss-making/unverified) | Both | RHP / Restated Financials |
-| `ebitda` | float | ₹ Crore | Operating earnings before interest, tax, dep. & amort. | Nullable (`NaN`) | Both | RHP / Restated Financials |
-| `total_debt` | float | ₹ Crore | Total short-term + long-term borrowings | Nullable (`NaN` if zero/debt-free) | Both | RHP / Balance Sheet |
-| `pe_ratio` | float | Ratio | P/E at upper price band based on diluted EPS | Nullable (`NaN` if negative earnings) | Both | RHP Valuation Section |
-| `pb_ratio` | float | Ratio | P/B ratio based on NAV per share | Nullable (`NaN`) | Both | RHP Valuation Section |
-| `peer_pe_ratio` | float | Ratio | Weighted or median P/E of listed peer group | Nullable (`NaN` if no listed peers) | Both | RHP Peer Comparison |
-| `peer_pb_ratio` | float | Ratio | Median P/B of listed peer group | Nullable (`NaN` if no listed peers) | Both | RHP Peer Comparison |
-| `qib_subscription` | float | Times (x) | Final Qualified Institutional Buyer subscription rate | `NaN` in Pre-close; Float in Post-close | **Post-close ONLY** | BSE/NSE Subscription Data |
-| `nii_subscription` | float | Times (x) | Final Non-Institutional Investor subscription rate | `NaN` in Pre-close; Float in Post-close | **Post-close ONLY** | BSE/NSE Subscription Data |
-| `retail_subscription`| float | Times (x) | Final Retail Individual Investor subscription rate | `NaN` in Pre-close; Float in Post-close | **Post-close ONLY** | BSE/NSE Subscription Data |
-| `overall_subscription`| float | Times (x) | Final total subscription across all categories | `NaN` in Pre-close; Float in Post-close | **Post-close ONLY** | BSE/NSE Subscription Data |
-| `gmp` | float | ₹ (INR) | Grey Market Premium observed at cutoff date | Nullable (`NaN` if unavailable) | Both | Reputable IPO Tracker |
-| `gmp_change` | float | ₹ (INR) | 3-day change in GMP prior to cutoff | Nullable (`NaN` if no historical GMP) | Both | Derived from GMP History |
-| `gmp_source` | string | Text | Sourcing portal / platform name | Nullable | Both | Collection Metadata |
-| `gmp_recorded_at` | datetime | ISO 8601 | Observation timestamp of the selected GMP | Nullable | Both | Collection Metadata |
-| `gmp_missing` | integer | `0` or `1` | Binary flag: `1` if GMP is absent, `0` if present | Required | Both | Derived Data Quality Indicator |
-| `prediction_stage` | string | Enum | `pre_close` or `post_close` | Required | Both | Pipeline Identifier |
-| `data_cutoff` | datetime | ISO 8601 | Snapshot timestamp when all row features were frozen | Required | Both | Leakage Guardrail |
-
----
-
-### B. `ipo_outcomes.csv` (Listing Outcomes Dataset)
-Stores verified ground-truth market listing outcomes. Used strictly for model training labels and performance evaluation.
-
-| Field Name | Type | Unit / Format | Description | Missing Value Policy | Notes |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `ipo_id` | string | `YYYY-SYMBOL` | Unique stable identifier for the IPO issue | Required (Foreign Key) | Matches `ipo_features.ipo_id` |
-| `listing_date` | date | `YYYY-MM-DD` | Date of official exchange listing | Required | NSE / BSE Official Record |
-| `issue_price` | float | ₹ (INR) | Final allotted issue price | Required | Reference for gain calculation |
-| `listing_open_price` | float | ₹ (INR) | First traded price on listing morning (NSE primary) | Required | **Primary Ground Truth Target** |
-| `listing_close_price`| float | ₹ (INR) | Closing settlement price on listing day | Nullable (Optional secondary) | Optional reference metric |
-| `listing_gain_pct` | float | Percentage (%) | Percentage listing gain based on opening price | Required | Target for Regression: `((open - issue) / issue) * 100` |
-| `listing_positive` | integer | `0` or `1` | Binary classification indicator | Required | Target for Classification: `1` if gain > 0 else `0` |
+| Field Name | Description | Data Type | Unit | Expected Format | Primary Source | Required? | Missing Handling | Stage Eligibility | Validation Rules |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `ipo_id` | Canonical IPO identifier | String | None | `INMAIN-YYYY-NNNN` | Master Registry | Required | Fatal error if missing | Both | Must match regex `^INMAIN-\d{4}-\d{4}$` |
+| `company_name` | Full legal registered name | String | Text | E.g. "Swiggy Limited" | SEBI / Exchange | Required | Fatal error if missing | Both | Min length 2 characters |
+| `symbol` | Exchange trading ticker symbol | String | Text | E.g. "SWIGGY" | NSE / BSE | Optional | Empty string / NaN if unassigned | Both | Uppercase alphanumeric |
+| `exchange` | Primary listing exchange | String | Code | "NSE", "BSE", "NSE,BSE" | SEBI / Exchange | Optional | Defaults to "NSE,BSE" | Both | Valid exchange code |
+| `issue_open_date` | Subscription opening date | Date | Date | `YYYY-MM-DD` | RHP / Exchange | Required | Fatal error if missing | Both | Valid date, <= `issue_close_date` |
+| `issue_close_date` | Subscription closing date | Date | Date | `YYYY-MM-DD` | RHP / Exchange | Required | Fatal error if missing | Both | Valid date, >= `issue_open_date` |
+| `issue_price` | Final allotment / upper band price | Float | ₹ / share | Positive decimal | RHP / Allotment | Required | Fatal error if missing | Both | Must be > 0.0 |
+| `price_band_low` | Lower boundary of price band | Float | ₹ / share | Positive decimal | RHP / Red Herring | Optional | NaN if fixed price issue | Both | Must be > 0.0, <= `price_band_high` |
+| `price_band_high` | Upper boundary of price band | Float | ₹ / share | Positive decimal | RHP / Red Herring | Optional | NaN if fixed price issue | Both | Must be >= `price_band_low` |
+| `issue_size_cr` | Total capital raised | Float | ₹ Crore | Positive decimal | RHP / Allotment | Required | Fatal error if missing | Both | Must be > 0.0 (Mainboard >= 50 Cr typical) |
+| `fresh_issue_cr` | Fresh capital raised by company | Float | ₹ Crore | Non-negative decimal | RHP / Prospectus | Optional | NaN if 100% OFS | Both | Must be >= 0.0 |
+| `ofs_cr` | Offer for Sale by existing holders | Float | ₹ Crore | Non-negative decimal | RHP / Prospectus | Optional | NaN if 100% Fresh | Both | Must be >= 0.0 |
+| `listing_date` | Actual date of market listing | Date | Date | `YYYY-MM-DD` | Exchange Record | Optional | NaN if pre-listing snapshot | Both | Valid date, >= `issue_close_date` |
+| `revenue` | Total revenue / revenue from operations | Float | ₹ Crore | Decimal | RHP Restated P&L | Optional | NaN if unextracted | Both | Can be 0 or positive |
+| `revenue_period` | Reporting period for revenue | String | Code | E.g. "FY2024", "FY2023" | RHP Restated P&L | Optional | NaN if revenue missing | Both | Must specify fiscal period |
+| `profit_after_tax` | Net profit / (loss) after tax | Float | ₹ Crore | Decimal | RHP Restated P&L | Optional | NaN if unextracted | Both | Can be negative (loss) or positive |
+| `pat_period` | Reporting period for PAT | String | Code | E.g. "FY2024", "FY2023" | RHP Restated P&L | Optional | NaN if PAT missing | Both | Must specify fiscal period |
+| `ebitda` | Operating EBITDA | Float | ₹ Crore | Decimal | RHP Restated P&L | Optional | NaN if unextracted | Both | Can be negative or positive |
+| `ebitda_period` | Reporting period for EBITDA | String | Code | E.g. "FY2024", "FY2023" | RHP Restated P&L | Optional | NaN if EBITDA missing | Both | Must specify fiscal period |
+| `total_debt` | Short-term + long-term borrowings | Float | ₹ Crore | Non-negative decimal | RHP Balance Sheet | Optional | NaN if unextracted / 0 for debt-free | Both | Must be >= 0.0 (debt cannot be negative) |
+| `net_worth` | Total equity shareholder funds | Float | ₹ Crore | Decimal | RHP Balance Sheet | Optional | NaN if unextracted | Both | Can be negative in severe capital erosion |
+| `cash_flow_from_operations`| Net operating cash flows | Float | ₹ Crore | Decimal | RHP Cash Flow Stmt | Optional | NaN if unextracted | Both | Can be negative or positive |
+| `eps` | Basic/Diluted EPS prior to issue | Float | ₹ / share | Decimal | RHP Restated | Optional | NaN if unextracted | Both | Can be negative for loss-making |
+| `nav` | Net Asset Value per equity share | Float | ₹ / share | Decimal | RHP Restated | Optional | NaN if unextracted | Both | Can be negative |
+| `pe_ratio` | Price to Earnings multiple at upper band | Float | Multiple | Positive decimal | RHP Valuation | Optional | NaN if negative earnings (loss) | Both | Must be > 0.0 if present |
+| `pb_ratio` | Price to Book Value multiple | Float | Multiple | Positive decimal | RHP Valuation | Optional | NaN if negative net worth | Both | Must be > 0.0 if present |
+| `peer_pe_ratio` | Median / weighted P/E of listed peers | Float | Multiple | Positive decimal | RHP Peer Section | Optional | NaN if no listed direct peers | Both | Must be > 0.0 if present |
+| `peer_pb_ratio` | Median / weighted P/B of listed peers | Float | Multiple | Positive decimal | RHP Peer Section | Optional | NaN if no listed direct peers | Both | Must be > 0.0 if present |
+| `qib_subscription` | Qualified Institutional Buyer multiple | Float | Times (x) | Non-negative decimal | InvestorGain / NSE | Optional | NaN in pre_close; Float in post_close | **Post-Close Only** | >= 0.0; MUST be NaN in pre_close |
+| `nii_subscription` | Non-Institutional Investor multiple | Float | Times (x) | Non-negative decimal | InvestorGain / NSE | Optional | NaN in pre_close; Float in post_close | **Post-Close Only** | >= 0.0; MUST be NaN in pre_close |
+| `retail_subscription` | Retail Individual Investor multiple | Float | Times (x) | Non-negative decimal | InvestorGain / NSE | Optional | NaN in pre_close; Float in post_close | **Post-Close Only** | >= 0.0; MUST be NaN in pre_close |
+| `overall_subscription` | Total subscription across all pools | Float | Times (x) | Non-negative decimal | InvestorGain / NSE | Optional | NaN in pre_close; Float in post_close | **Post-Close Only** | >= 0.0; MUST be NaN in pre_close |
+| `gmp` | Grey Market Premium per share | Float | ₹ / share | Decimal | Reputable Tracker | Optional | NaN if absent; NEVER zero-fill | Both | Can be negative, zero, or positive |
+| `gmp_change` | 3-day change in quoted GMP | Float | ₹ / share | Decimal | Derived from GMP History | Optional | NaN if insufficient history | Both | Can be negative, zero, or positive |
+| `gmp_source` | Platform reporting the quoted GMP | String | Text | E.g. "InvestorGain" | Platform metadata | Optional | NaN if GMP absent | Both | Valid string |
+| `gmp_recorded_at` | Timestamp of GMP observation | DateTime | ISO 8601 | `YYYY-MM-DDTHH:MM:SS` | Platform metadata | Optional | NaN if GMP absent | Both | Must be <= `data_cutoff` |
+| `gmp_missing` | Indicator if GMP quote is absent | Integer | Binary | `0` or `1` | Data quality audit | Required | Must be 1 if GMP NaN, 0 if present | Both | Must be 0 or 1 |
+| `prediction_stage` | Prediction pipeline phase | String | Enum | `pre_close` or `post_close` | Pipeline metadata | Required | Fatal error if missing | Both | Must be 'pre_close' or 'post_close' |
+| `data_cutoff` | Point-in-time timestamp of snapshot | DateTime | ISO 8601 | `YYYY-MM-DDTHH:MM:SS` | Leakage guardrail | Required | Fatal error if missing | Both | All row features must be <= cutoff |
 
 ---
 
-### C. `ipo_gmp_history.csv` (GMP Time Series Dataset)
-Tracks the evolution of unofficial grey market premium quotes over the pre-listing window.
+### B. `ipo_outcomes.csv` (Ground Truth Listing Outcomes)
+Stores actual verified market listing performance. Used strictly as supervised targets ($y$) for ML models.
 
-| Field Name | Type | Unit / Format | Description | Missing Value Policy | Notes |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `ipo_id` | string | `YYYY-SYMBOL` | Stable identifier for the IPO issue | Required (Foreign Key) | Connects to `ipo_features` |
-| `recorded_at` | datetime | ISO 8601 | Exact date and time the quote was posted/recorded | Required | Essential for point-in-time lookup |
-| `gmp` | float | ₹ (INR) | Unofficial premium per share over issue price | Required | Raw observation |
-| `estimated_listing_price` | float | ₹ (INR) | Quoted estimated listing price (`issue_price + gmp`) | Nullable | Calculated or reported |
-| `source` | string | Text | Origin website or market tracker name | Required | For provenance & credibility auditing |
-| `source_url` | string | URL | Direct link or archived URL of the record | Nullable | Audit trail |
-| `notes` | string | Text | Special context (e.g. subject to Sauda, muted trading) | Nullable | Market qualitative notes |
+| Field Name | Description | Data Type | Unit | Expected Format | Primary Source | Required? | Missing Handling | Validation Rules |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `ipo_id` | Canonical IPO identifier | String | None | `INMAIN-YYYY-NNNN` | Master Registry | Required | Foreign key to `ipo_features` | Must match regex `^INMAIN-\d{4}-\d{4}$` |
+| `listing_date` | Official date of exchange debut | Date | Date | `YYYY-MM-DD` | NSE / BSE Official | Required | Fatal error if missing | Valid date |
+| `issue_price` | Final allotment price | Float | ₹ / share | Positive decimal | Basis of Allotment | Required | Fatal error if missing | Must be > 0.0 |
+| `listing_open_price`| First trade price in pre-open session | Float | ₹ / share | Positive decimal | NSE Official Feed | Required | Fatal error if missing | **Primary Ground Truth Target**; Must be > 0.0 |
+| `listing_close_price`| Final settlement price on listing day | Float | ₹ / share | Positive decimal | NSE Official Feed | Optional | NaN if unavailable | Must be > 0.0 if present |
+| `listing_gain_pct` | Opening gain or discount percentage | Float | % | Decimal | Derived outcome | Required | Computed deterministically | Formula: `((open - issue) / issue) * 100` |
+| `listing_positive` | Binary outcome (1=Premium, 0=Discount/Par) | Integer | Binary | `0` or `1` | Derived classification target | Required | Computed deterministically | `1` if `listing_gain_pct > 0.0` else `0` |
 
 ---
 
-## 3. Data Integrity & Validation Rules
+### C. `ipo_gmp_history.csv` (GMP Time Series Sentiment)
+Preserves granular grey market movements across the entire IPO lifecycle (from DRHP filing to listing morning).
 
-- **Duplicate Check:** No duplicate `(ipo_id, prediction_stage)` tuples in `ipo_features.csv`.
-- **Temporal Consistency:** `issue_open_date` $\le$ `issue_close_date` $\le$ `listing_date`.
-- **Price Sanity:** `issue_price > 0`, `listing_open_price > 0`.
-- **Issue Size Consistency:** If both present, `fresh_issue_cr + ofs_cr` $\approx$ `issue_size_cr`.
-- **Subscription Positivity:** Subscriptions cannot be negative; `overall_subscription >= 0`.
+| Field Name | Description | Data Type | Unit | Expected Format | Primary Source | Required? | Missing Handling | Validation Rules |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `ipo_id` | Canonical IPO identifier | String | None | `INMAIN-YYYY-NNNN` | Master Registry | Required | Foreign key | Must match regex `^INMAIN-\d{4}-\d{4}$` |
+| `recorded_at` | Timestamp of the quoted premium | DateTime | ISO 8601 | `YYYY-MM-DDTHH:MM:SS` | Tracker platform | Required | Fatal error if missing | Valid ISO timestamp |
+| `gmp` | Unofficial market premium per share | Float | ₹ / share | Decimal | Tracker platform | Required | Fatal error if missing | Can be negative, zero, or positive |
+| `source` | Name of tracker reporting the quote | String | Text | E.g. "InvestorGain" | Tracker platform | Required | Fatal error if missing | Min length 2 characters |
+| `source_url` | Direct URL of observation | String | URL | Valid HTTP/S URL | Scraper metadata | Optional | NaN if uncaptured | Valid URL format if present |
+| `notes` | Market context or trading status | String | Text | E.g. "Kostak 500", "Subject to Sauda" | Market tracker | Optional | NaN if absent | Text string |
 
+---
+
+### D. `ipo_feature_sources.csv` (Data Provenance & RAG Audit)
+Tracks the exact origin, extraction methodology, and verification status for every critical fundamental and valuation feature. Serves as the audit backbone for Phase 5 (RHP/DRHP RAG Engine).
+
+| Field Name | Description | Data Type | Unit | Expected Format | Required? | Missing Handling | Validation Rules |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `ipo_id` | Canonical IPO identifier | String | None | `INMAIN-YYYY-NNNN` | Required | Foreign key | Must match regex `^INMAIN-\d{4}-\d{4}$` |
+| `prediction_stage` | Associated prediction stage | String | Enum | `pre_close` or `post_close` | Required | Fatal error if missing | Must be 'pre_close' or 'post_close' |
+| `data_cutoff` | Frozen snapshot timestamp | DateTime | ISO 8601 | `YYYY-MM-DDTHH:MM:SS` | Required | Fatal error if missing | Valid ISO timestamp |
+| `feature_name` | Name of feature sourced | String | Column Name | E.g. "revenue", "ebitda" | Required | Fatal error if missing | Must correspond to valid feature |
+| `feature_value` | Raw recorded value | String | Stringified | E.g. "11247.3" | Required | Fatal error if missing | String representation of value |
+| `source_name` | Entity or document providing data | String | Text | E.g. "SEBI_RHP", "Chittorgarh" | Required | Fatal error if missing | Valid text |
+| `source_url` | Direct URL to online source / PDF | String | URL | Valid HTTP/S URL | Optional | Empty string / NaN | Valid URL if present |
+| `document_name` | Name of prospectus PDF file | String | Filename | E.g. "Swiggy_RHP.pdf" | Optional | Empty string / NaN | File basename if RHP extract |
+| `document_page` | PDF page number where value appears | Integer | Page number | Positive integer | Optional | NaN if not from PDF | Must be >= 1 if present |
+| `retrieved_at` | Timestamp when data was retrieved | DateTime | ISO 8601 | `YYYY-MM-DDTHH:MM:SS` | Required | Defaults to ingestion time | Valid ISO timestamp |
+| `verification_status`| Verification workflow state | String | Enum | `unverified`, `llm_extracted`, `verified` | Required | Defaults to "unverified" | 'unverified', 'llm_extracted', or 'verified' |
+| `notes` | Context or extraction caveats | String | Text | E.g. "Restated Ind AS summary" | Optional | Empty string / NaN | Text string |
+
+---
+
+### E. `ipo_registry.csv` (Master IPO Directory)
+The authoritative master registry establishing unique, permanent identifiers for Indian Mainboard IPOs.
+
+| Field Name | Description | Data Type | Unit | Expected Format | Required? | Missing Handling | Validation Rules |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `ipo_id` | Canonical IPO identifier | String | None | `INMAIN-YYYY-NNNN` | Required | Primary Key | Unique, immutable |
+| `company_name` | Registered legal corporate name | String | Text | E.g. "Swiggy Limited" | Required | Fatal error if missing | Min length 2 characters |
+| `symbol` | Exchange ticker symbol | String | Text | E.g. "SWIGGY" | Optional | Empty string if unassigned | Uppercase alphanumeric |
+| `issue_open_date` | Subscription opening date | Date | Date | `YYYY-MM-DD` | Optional | Empty string if unannounced | Valid date |
+| `issue_close_date` | Subscription closing date | Date | Date | `YYYY-MM-DD` | Optional | Empty string if unannounced | Valid date, >= open date |
+| `listing_date` | Date of exchange listing | Date | Date | `YYYY-MM-DD` | Optional | Empty string if unlisted | Valid date, >= close date |
+
+---
+
+## 3. Data Integrity & Validation Safeguards
+
+1. **Uniqueness:**
+   - In `ipo_features.csv`, each tuple of `(ipo_id, prediction_stage, data_cutoff)` must be strictly unique.
+   - In `ipo_outcomes.csv` and `ipo_registry.csv`, `ipo_id` must be strictly unique (1 row per IPO).
+2. **Temporal Precedence:**
+   - $\text{issue\_open\_date} \le \text{issue\_close\_date} \le \text{listing\_date}$.
+   - All feature values in a snapshot row must have an observation timestamp $\le \text{data\_cutoff}$.
+3. **Leakage Prohibition:**
+   - For all rows where $\text{prediction\_stage} = \text{"pre\_close"}$:
+     $$\text{qib\_subscription} = \text{nii\_subscription} = \text{retail\_subscription} = \text{overall\_subscription} = \mathbf{NaN}$$
+4. **Calculated Target Invariants:**
+   - $\text{listing\_gain\_pct} = \frac{\text{listing\_open\_price} - \text{issue\_price}}{\text{issue\_price}} \times 100$.
+   - $\text{listing\_positive} = \begin{cases} 1 & \text{if } \text{listing\_gain\_pct} > 0.0 \\ 0 & \text{if } \text{listing\_gain\_pct} \le 0.0 \end{cases}$ (Note: a gain of exactly $0.0\%$ lists at par, thus $\text{listing\_positive} = 0$).

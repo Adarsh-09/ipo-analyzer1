@@ -236,9 +236,9 @@ All data generated in IPOVision adheres strictly to the specifications documente
 | Phase | Description | Deliverable | Status |
 | :---: | :--- | :--- | :---: |
 | **Phase 0** | **Project Setup & Environment Initialization** | **Project skeleton, config, tests, documentation** | **COMPLETED** |
-| Phase 1 | Data Source Testing & Scraper Prototyping | Verified HTTP endpoints, headers, and rate limits | *Next* |
-| Phase 2 | Dataset Construction & Validation Engine | Schema validators, duplicate auditors, CSV storage | *Pending* |
-| Phase 3 | Historical Mainboard IPO Data Collection | Verified historical sample dataset with provenance | *Pending* |
+| **Phase 1** | **Data Source Testing & Scraper Prototyping** | **Verified HTTP endpoints, headers, and scrapers** | **COMPLETED** |
+| **Phase 2** | **Dataset Construction & Validation Engine** | **Schemas, IPO ID system, validators, CSV manager, tests** | **COMPLETED** |
+| Phase 3 | Historical Mainboard IPO Data Collection | Verified historical dataset with provenance tracking | *Next* |
 | Phase 4 | Exploratory Data Analysis (EDA) | Statistical distributions, GMP correlation report | *Pending* |
 | Phase 5 | RHP/DRHP RAG Intelligence Engine | PDF extraction, OCR fallback, ChromaDB, Gemini RAG | *Pending* |
 | Phase 6 | Fundamental Analysis Integration | Transparent financial scoring & risk flags | *Pending* |
