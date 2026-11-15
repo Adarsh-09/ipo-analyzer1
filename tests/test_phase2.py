@@ -24,12 +24,14 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
+import numpy as np
 
 from src.cleaning.ipo_id import (
     is_valid_ipo_id,
@@ -454,26 +456,76 @@ class TestDatasetManager(unittest.TestCase):
         self.assertIn("IPOVision — Data Quality & Integrity Report", content)
         self.assertIn("ipo_features", content)
 
+class TestProcessedStore(unittest.TestCase):
+    """Phase 3 replaced the empty templates with real data. These tests guard the loaded store."""
 
-class TestEmptyTemplatesInProcessed(unittest.TestCase):
-    """Verifies that the canonical processed CSV files are templates (0 rows)."""
+    HEADERS = {
+        "ipo_registry": ["ipo_id", "company_name", "symbol", "issue_open_date", "issue_close_date", "listing_date"],
+        "ipo_outcomes": ["ipo_id", "listing_date", "issue_price", "listing_open_price", "listing_close_price",
+                         "listing_gain_pct", "listing_positive"],
+        "ipo_gmp_history": ["ipo_id", "recorded_at", "gmp", "source", "source_url", "notes"],
+        "ipo_feature_sources": ["ipo_id", "prediction_stage", "data_cutoff", "feature_name", "feature_value",
+                                "source_name", "source_url", "document_name", "document_page", "retrieved_at",
+                                "verification_status", "notes"],
+    }
+    SUB_COLS = ["qib_subscription", "nii_subscription", "retail_subscription", "overall_subscription"]
 
-    def test_all_five_templates_exist_and_empty(self):
-        processed_dir = PROJECT_ROOT / "data" / "processed"
-        expected_templates = [
-            "ipo_features.csv",
-            "ipo_outcomes.csv",
-            "ipo_gmp_history.csv",
-            "ipo_feature_sources.csv",
-            "ipo_registry.csv",
-        ]
-        for fname in expected_templates:
-            fpath = processed_dir / fname
-            self.assertTrue(fpath.exists(), f"Missing template: {fpath}")
-            df = pd.read_csv(fpath)
-            self.assertEqual(len(df), 0, f"Template {fname} should have 0 data rows, found {len(df)}")
-            self.assertGreater(len(df.columns), 0, f"Template {fname} should have header columns")
+    @classmethod
+    def setUpClass(cls):
+        from src.cleaning import DatasetManager
+        cls.dm = DatasetManager()
+        cls.pdir = PROJECT_ROOT / "data" / "processed"
+        cls.tables = {n: cls.dm.load_dataset(n) for n in
+                      ["ipo_registry", "ipo_features", "ipo_outcomes", "ipo_gmp_history", "ipo_feature_sources"]}
 
+    def test_all_five_files_exist_with_expected_headers(self):
+        for name, cols in self.HEADERS.items():
+            path = self.pdir / f"{name}.csv"
+            self.assertTrue(path.exists(), f"Missing file: {path}")
+            self.assertEqual(list(pd.read_csv(path, nrows=0).columns), cols, f"Header changed in {name}")
+        feats = list(pd.read_csv(self.pdir / "ipo_features.csv", nrows=0).columns)
+        self.assertEqual(len(feats), 39)
+        for c in ["ipo_id", "gmp", "gmp_missing", "prediction_stage", "data_cutoff", "overall_subscription"]:
+            self.assertIn(c, feats)
+
+    def test_loaded_tables_pass_validators(self):
+        for name, df in self.tables.items():
+            if df.empty:
+                continue                       # ipo_gmp_history is intentionally empty for now
+            rep = self.dm.validate_dataset(name, df)
+            self.assertEqual(rep.error_count, 0, f"{name}: {[str(e) for e in rep.errors[:3]]}")
+
+    def test_no_synthetic_fixture_rows_in_processed(self):
+        fixture = pd.read_csv(PROJECT_ROOT / "tests" / "fixtures" / "synthetic_ipo_registry.csv", dtype=str).dropna(subset=["ipo_id", "company_name"])
+        real = self.tables["ipo_registry"].dropna(subset=["ipo_id", "company_name"])
+        key = lambda df: set(zip(df["ipo_id"].str.strip(), df["company_name"].str.strip().str.upper()))
+        overlap = key(fixture) & key(real)
+        self.assertFalse(overlap, f"Synthetic fixture rows found in processed data: {sorted(overlap)}")
+
+    def test_ids_valid_unique_and_consistent(self):
+        from src.cleaning import is_valid_ipo_id, check_referential_integrity
+        reg, fea, out = (self.tables[n] for n in ["ipo_registry", "ipo_features", "ipo_outcomes"])
+        self.assertTrue(reg["ipo_id"].is_unique)
+        self.assertTrue(all(is_valid_ipo_id(i) for i in reg["ipo_id"]))
+        self.assertEqual(set(reg["ipo_id"]), set(fea["ipo_id"]))
+        self.assertEqual(set(reg["ipo_id"]), set(out["ipo_id"]))
+        self.assertEqual(check_referential_integrity(fea, out, None, reg), [])
+
+    def test_pre_close_rows_never_carry_subscription(self):
+        f = self.tables["ipo_features"]
+        pre = f[f["prediction_stage"] == "pre_close"]
+        self.assertFalse(pre[self.SUB_COLS].notna().any(axis=1).any())
+
+    def test_target_math_matches_prices(self):
+        o = self.tables["ipo_outcomes"]
+        expected = (o["listing_open_price"] - o["issue_price"]) / o["issue_price"] * 100
+        self.assertTrue(np.allclose(o["listing_gain_pct"], expected, atol=1e-6))
+        self.assertTrue(((o["listing_gain_pct"] > 0).astype(int) == o["listing_positive"]).all())
+
+    def test_missing_gmp_is_never_zero(self):
+        f = self.tables["ipo_features"]
+        self.assertTrue(f.loc[f["gmp_missing"] == 1, "gmp"].isna().all())
+        self.assertTrue((f.loc[f["gmp"].isna(), "gmp_missing"] == 1).all())
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

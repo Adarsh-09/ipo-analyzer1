@@ -5,10 +5,13 @@ E:.
 |   .env.example
 |   .gitignore
 |   directory_structure.txt
-|   directory_sturucture.txt
+|   eda_summary.md
+|   IPOVision_Progress_and_Roadmap.md
 |   phase2_report.md
 |   README.md
 |   requirements.txt
+|   summary.md
+|   summary_of_phases.md
 |   
 +---.ipynb_checkpoints
 |       insecpt_investorgain_history-checkpoint.py
@@ -20,6 +23,7 @@ E:.
 |   |   
 |   \---v
 |       \---cache
+|               lastfailed
 |               nodeids
 |               
 +---.venv
@@ -89349,6 +89353,11 @@ E:.
 |   |   |   .gitkeep
 |   |   |   kaggle_audit_flags.csv
 |   |   |   
+|   |   +---gmp
+|   |   |       gmp_tracker_2020_parsed.csv
+|   |   |       gmp_tracker_all_years.csv
+|   |   |       gmp_unmatched_classified.csv
+|   |   |       
 |   |   +---ipo_master
 |   |   |   |   eveidence_collecting.ipynb
 |   |   |   |   ipo_dates_2020.csv
@@ -89360,11 +89369,27 @@ E:.
 |   |   |   \---.ipynb_checkpoints
 |   |   |           eveidence_collecting-checkpoint.ipynb
 |   |   |           
-|   |   \---kaggle
-|   |           kaggle_clean_candidates.csv
-|   |           kaggle_excluded.csv
-|   |           kaggle_review_queue.csv
-|   |           model_base.csv
+|   |   +---kaggle
+|   |   |       kaggle_clean_candidates.csv
+|   |   |       kaggle_excluded.csv
+|   |   |       kaggle_review_queue.csv
+|   |   |       model_base.csv
+|   |   |       model_base_gmp.csv
+|   |   |       model_base_v2.csv
+|   |   |       
+|   |   +---processed_backup_20261114_204726
+|   |   |       ipo_features.csv
+|   |   |       ipo_feature_sources.csv
+|   |   |       ipo_gmp_history.csv
+|   |   |       ipo_outcomes.csv
+|   |   |       ipo_registry.csv
+|   |   |       
+|   |   \---processed_staging
+|   |           ipo_features.csv
+|   |           ipo_feature_sources.csv
+|   |           ipo_outcomes.csv
+|   |           ipo_registry.csv
+|   |           ipo_source_tags.csv
 |   |           
 |   +---processed
 |   |       .gitkeep
@@ -89383,6 +89408,15 @@ E:.
 |       |   source_test_report.json
 |       |   source_test_summary.txt
 |       |   
+|       +---gmp
+|       |       tracker_2020.html
+|       |       tracker_2021.html
+|       |       tracker_2022.html
+|       |       tracker_2023.html
+|       |       tracker_2024.html
+|       |       tracker_2025.html
+|       |       tracker_2026.html
+|       |       
 |       \---ipo_master
 |           |   investorgain_gmp_tracker_2020.html
 |           |   investorgain_mainboard_2020.html
@@ -89414,6 +89448,7 @@ E:.
 +---models
 |       .gitkeep
 |       baseline_models.py
+|       build_v2.py
 |       
 +---notebooks
 |       01_source_testing.ipynb
@@ -89422,32 +89457,57 @@ E:.
 |   +---data_quality
 |   |       data_quality_report.md
 |   |       
+|   +---eda
+|   |       eda_findings.md
+|   |       eda_followup.md
+|   |       
 |   +---evaluation
 |   |       .gitkeep
+|   |       baseline_v2_gmp.txt
 |   |       
 |   +---figures
 |   |       .gitkeep
+|   |       01_gain_distribution.png
+|   |       02_by_year.png
+|   |       03_subscription_vs_gain.png
+|   |       04_gmp_accuracy.png
+|   |       05_buckets.png
+|   |       06_correlations.png
+|   |       07_market_vs_gain.png
+|   |       08_gmp_x_subscription.png
 |   |       
 |   \---source_testing
 |           source_testing_summary.md
 |           source_test_results.csv
 |           
 +---root
-|       audit_kaggle_ipo.py
-|       build_features.py
-|       bulk_ipo_date_collector.py
-|       clean_kaggle.py
-|       collect_ipo_master_candidates.py
-|       create_date_verification_ledger.py
-|       extract_ipo_issue_dates.py
-|       insecpt_gmp_snapshot.py
-|       insecpt_investorgain_history.py
-|       inspect_investorgain_gmp_tracker.py
-|       inspect_ipo_detail_links.py
-|       review_ipo_master_candidates.py
-|       scan_detail_pages_for_gmp.py
-|       verify_detail_urls.py
-|       
+|   |   audit_kaggle_ipo.py
+|   |   build_features.py
+|   |   bulk_ipo_date_collector.py
+|   |   check_staging.py
+|   |   check_zero_gain.py
+|   |   clean_kaggle.py
+|   |   collect_ipo_master_candidates.py
+|   |   create_date_verification_ledger.py
+|   |   eda_findings.py
+|   |   eda_followup.py
+|   |   extract_ipo_issue_dates.py
+|   |   gmp_gaps.py
+|   |   gmp_step.py
+|   |   insecpt_gmp_snapshot.py
+|   |   insecpt_investorgain_history.py
+|   |   inspect_investorgain_gmp_tracker.py
+|   |   inspect_ipo_detail_links.py
+|   |   load_processed_staging.py
+|   |   parse_gmp_tracker.py
+|   |   review_ipo_master_candidates.py
+|   |   scan_detail_pages_for_gmp.py
+|   |   verify_detail_urls.py
+|   |   write_processed.py
+|   |   
+|   \---__pycache__
+|           parse_gmp_tracker.cpython-312.pyc
+|           
 +---src
 |   |   config.py
 |   |   __init__.py
@@ -89518,5 +89578,6 @@ E:.
             test_environment.cpython-312-pytest-9.2.0.pyc
             test_phase1.cpython-312-pytest-9.2.0.pyc
             test_phase2.cpython-312-pytest-9.2.0.pyc
+            test_phase2.cpython-314.pyc
             __init__.cpython-312.pyc
             
