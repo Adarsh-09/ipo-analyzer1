@@ -29,6 +29,12 @@ import pandas as pd
 
 from src.cleaning.ipo_id import is_valid_ipo_id
 
+# Prediction stages. A "listing_eve" snapshot is taken the day before listing and is the only stage
+# that may carry a GMP value without its own timestamp (the tracker gives one untimestamped final value).
+VALID_STAGES = ("pre_close", "post_close", "listing_eve")
+STAGES_REQUIRING_TIMESTAMPED_GMP = ("pre_close", "post_close")
+MAX_EQUITY_ISSUE_PRICE = 10000.0  # SM-REIT / InvIT-style units priced above this are not equity IPOs
+
 
 @dataclass
 class ValidationIssue:
@@ -295,6 +301,20 @@ def validate_issue_pricing_and_size(df: pd.DataFrame) -> List[ValidationIssue]:
                         message=f"issue_price must be > 0. Found: {price_val}.",
                     )
                 )
+            elif price_val > MAX_EQUITY_ISSUE_PRICE:
+                issues.append(
+                    ValidationIssue(
+                        level="ERROR",
+                        category="IPO",
+                        row_index=int(idx),
+                        ipo_id=ipo_id,
+                        field="issue_price",
+                        message=(
+                            f"issue_price {price_val:,.0f} exceeds {MAX_EQUITY_ISSUE_PRICE:,.0f}: "
+                            "likely an SM-REIT/InvIT unit, not an equity IPO."
+                        ),
+                    )
+                )
 
         if "issue_size_cr" in df.columns:
             size_val = _to_float(row.get("issue_size_cr"))
@@ -473,7 +493,7 @@ def validate_gmp_fidelity(df: pd.DataFrame) -> List[ValidationIssue]:
 def validate_prediction_stage_and_leakage(df: pd.DataFrame) -> List[ValidationIssue]:
     """
     CRITICAL LEAKAGE AUDIT:
-    1. prediction_stage must be 'pre_close' or 'post_close'.
+    1. prediction_stage must be 'pre_close', 'post_close' or 'listing_eve'.
     2. In 'pre_close', all subscription fields (QIB, NII, Retail, Overall) MUST BE NaN/None.
     3. If data_cutoff is specified, all observation timestamps must be <= data_cutoff.
     4. Outcome columns (listing_open_price, listing_gain_pct) MUST NOT exist in features dataset!
@@ -517,7 +537,7 @@ def validate_prediction_stage_and_leakage(df: pd.DataFrame) -> List[ValidationIs
         ipo_id = str(row.get("ipo_id", ""))
         stage = str(row.get("prediction_stage", "")).strip().lower()
 
-        if stage not in ("pre_close", "post_close"):
+        if stage not in VALID_STAGES:
             issues.append(
                 ValidationIssue(
                     level="ERROR",
@@ -525,7 +545,7 @@ def validate_prediction_stage_and_leakage(df: pd.DataFrame) -> List[ValidationIs
                     row_index=int(idx),
                     ipo_id=ipo_id,
                     field="prediction_stage",
-                    message=f"Invalid prediction_stage '{stage}'. Must be 'pre_close' or 'post_close'.",
+                    message=f"Invalid prediction_stage '{stage}'. Must be one of {VALID_STAGES}.",
                 )
             )
             continue
@@ -548,6 +568,23 @@ def validate_prediction_stage_and_leakage(df: pd.DataFrame) -> List[ValidationIs
                                 ),
                             )
                         )
+
+        # GMP without its own timestamp is a listing-eve value: forbidden in earlier stages
+        if stage in STAGES_REQUIRING_TIMESTAMPED_GMP and "gmp" in df.columns:
+            if not _is_empty_or_na(row.get("gmp")) and _is_empty_or_na(row.get("gmp_recorded_at")):
+                issues.append(
+                    ValidationIssue(
+                        level="ERROR",
+                        category="STAGE",
+                        row_index=int(idx),
+                        ipo_id=ipo_id,
+                        field="gmp",
+                        message=(
+                            f"GMP present in a {stage} row without gmp_recorded_at. "
+                            "Untimestamped GMP is only allowed in listing_eve snapshots."
+                        ),
+                    )
+                )
 
         # Temporal Cutoff Check
         if "data_cutoff" in df.columns:
@@ -885,7 +922,7 @@ def validate_feature_sources_dataset(df: pd.DataFrame) -> ValidationReport:
     for idx, row in df.iterrows():
         ipo_id = str(row.get("ipo_id", ""))
         stage = str(row.get("prediction_stage", "")).strip().lower()
-        if stage not in ("pre_close", "post_close"):
+        if stage not in VALID_STAGES:
             issues.append(
                 ValidationIssue(
                     level="ERROR",

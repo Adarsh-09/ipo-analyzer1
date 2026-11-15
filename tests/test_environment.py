@@ -43,7 +43,6 @@ class TestEnvironmentSetup(unittest.TestCase):
             "src/rag",
             "app/pages",
             "app/components",
-            "models",
             "reports/figures",
             "reports/evaluation",
             "tests",

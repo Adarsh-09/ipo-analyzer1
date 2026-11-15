@@ -11,7 +11,7 @@ from parse_gmp_tracker import parse_tracker_html
 KG, GM, RAW = ROOT / "data/interim/kaggle", ROOT / "data/interim/gmp", ROOT / "data/raw"
 pd.set_option("display.width", 220); pd.set_option("display.max_columns", None); pd.set_option("display.max_rows", 200)
 
-NON_EQUITY = r"reit|invit|trust|fund|real estate|propshare|office parks"
+NON_EQUITY = r"\breit\b|invit|\btrust\b|real estate|propshare|property share|office parks|infrastructure fund"
 TRUNCATED = ("bagmane", "citius transnet", "raajmarg", "anantam highways", "knowledge realty")
 FPOS = [("power grid corporation", 2013), ("yes bank", 2020), ("vodafone idea", 2024)]
 
@@ -67,8 +67,13 @@ best = (cand[cand["ok"]].sort_values("score", ascending=False)
 cand.assign(accepted=cand["kid"].isin(best["kid"]) & cand["tid"].isin(best["tid"])).to_csv(GM / "join_audit_v3.csv", index=False)
 
 n0 = len(k)
-k = k.merge(best[["kid", "tid", "gmp_rs", "gmp_pct_of_issue", "symbol"]], on="kid", how="left")
+k = k.merge(best[["kid", "tid", "gmp_rs", "gmp_pct_of_issue", "symbol", "total_sub_t"]], on="kid", how="left")
 assert len(k) == n0 and k["tid"].dropna().is_unique
+rel = ((k["total_sub"] - k["total_sub_t"]).abs() / k["total_sub"]).replace([np.inf], 1.0).fillna(0)
+k["sub_conflict"] = rel > 0.25
+k.loc[k["sub_conflict"], "total_sub"] = k.loc[k["sub_conflict"], "total_sub_t"]
+k.loc[k["sub_conflict"], ["qib_sub", "nii_sub", "retail_sub"]] = np.nan
+k = k.drop(columns=["total_sub_t"])
 
 # ---------- 4) tracker-only rows: never add an IPO whose date+price already exists in Kaggle ----------
 left = t[~t["tid"].isin(best["tid"])]
@@ -88,6 +93,7 @@ df = pd.concat([k.drop(columns=["kid", "issue_price_r"]), new], ignore_index=Tru
 df["listing_date"] = pd.to_datetime(df["listing_date"]).astype("datetime64[ns]")
 df = df.sort_values(["listing_date", "company_name", "issue_price"], kind="stable").reset_index(drop=True)
 df["listing_year"] = df["listing_date"].dt.year
+df["sub_conflict"] = (df["sub_conflict"].infer_objects(copy=False).fillna(False).astype(bool))
 df["listing_gain_pct"] = (df["listing_price"] - df["issue_price"]) / df["issue_price"] * 100
 df["listing_positive"] = (df["listing_gain_pct"] > 0).astype(int)
 df["gmp_missing"] = df["gmp_pct_of_issue"].isna().astype(int)
@@ -143,6 +149,7 @@ print(f"\nDate+price candidates rejected on name/size: {int((~cand['ok']).sum())
 acc = best.assign(sub_diff=((best["total_sub"] - best["total_sub_t"]).abs() / best["total_sub"]).fillna(0))
 flag = acc[(acc["size_diff"] > 0.10) | (acc["sub_diff"] > 0.25)]
 print(f"Accepted matches where issue size differs >10% or subscription differs >25%: {len(flag)}")
+print(f"  tracker subscription higher than Kaggle in {(flag['total_sub_t'] > flag['total_sub']).mean():.0%} of them | rows marked sub_conflict: {int(out['sub_conflict'].sum())}")
 print(flag[["listing_date", "company_name", "company_name_t", "issue_size_cr", "issue_size_cr_t", "total_sub", "total_sub_t"]].head(15).to_string(index=False))
 gain = out["listing_gain_pct"]
 print(f"\nExactly flat: {int((gain == 0).sum())} | within +/-2%: {int((gain.abs() <= 2).sum())}")
