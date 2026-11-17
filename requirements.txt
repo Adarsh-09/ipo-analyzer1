@@ -28,12 +28,13 @@ plotly>=5.18.0
 streamlit>=1.30.0
 
 # Document Intelligence & RHP/DRHP RAG Engine
-PyMuPDF>=1.23.0           # High-performance PDF text & metadata extraction
-pdfplumber>=0.10.0        # Structured table extraction from PDFs
-chromadb>=0.4.22          # Vector database for semantic chunk retrieval
+PyMuPDF>=1.23.0             # High-performance PDF text & metadata extraction
+pdfplumber>=0.10.0          # Structured table extraction from PDFs
+chromadb>=0.4.22            # Vector database for semantic chunk retrieval
 sentence-transformers>=2.3.0 # Local multilingual embeddings
-rank-bm25>=0.2.2          # Keyword/BM25 retrieval for hybrid search
-google-generativeai>=0.4.0 # Google Gemini API client for LLM reasoning
+rank-bm25>=0.2.2            # Keyword/BM25 retrieval for hybrid search
+google-genai>=1.0.0         # Google Gemini API client for LLM reasoning
+anthropic>=0.40.0            # Anthropic API client
 
 # Configuration & Utilities
 pyyaml>=6.0.1
@@ -47,4 +48,3 @@ pytest-cov>=4.1.0
 # Notebook Exploration Environment
 jupyter>=1.0.0
 ipykernel>=6.26.0
-

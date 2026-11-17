@@ -19,6 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.bak
 
 # Virtual Environments
 venv/
@@ -27,6 +28,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
+.venv_test/
 
 # Environment variables & secrets
 .env
@@ -64,6 +66,7 @@ chroma_db/
 vector_store/
 temp_uploads/
 *.pdf
+data/rag/
 
 # Model binary weights (allow directory structure via .gitkeep)
 models/*.joblib
