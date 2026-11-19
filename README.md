@@ -2,9 +2,9 @@
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/Tests-132%20passed-success?logo=pytest&logoColor=white)](file:///tests/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Candy%20UI-FF4B4B?logo=streamlit&logoColor=white)](file:///app/)
 [![LLM](https://img.shields.io/badge/LLM-Gemini%202.5%20Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
 [![Market](https://img.shields.io/badge/Market-NSE%20%7C%20BSE%20Mainboard-orange)](#)
+[![Dataset](https://www.kaggle.com/datasets/karanammithul/ipo-data-india-2010-2025)
 
 > **Empirical probability modeling & citation-grounded prospectus RAG intelligence for Indian mainboard IPO listings (2017–2026).**
 
