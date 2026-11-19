@@ -3,9 +3,20 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.fundamental_analysis.scoring import (FUNDAMENTAL_BANDS, FUNDAMENTAL_WEIGHTS, LISTING_WEIGHTS,
-                                              FundamentalInputs, ListingInputs, band_for, cagr, interp,
-                                              score_fundamental, score_listing)
+from src.fundamental_analysis.scoring import (
+    FUNDAMENTAL_BANDS,
+    FUNDAMENTAL_WEIGHTS,
+    LISTING_WEIGHTS,
+    FundamentalInputs,
+    ListingInputs,
+    band_for,
+    cagr,
+    interp,
+    score_fundamental,
+    score_listing,
+    fundamental_inputs_from_evidence,
+    validate_fundamental_inputs,
+)
 
 
 class TestHelpers(unittest.TestCase):
@@ -79,6 +90,201 @@ class TestFundamentalScore(unittest.TestCase):
         self.assertIn("Loss-making in the latest year.", r["red_flags"])
         self.assertIsNone(score_fundamental(FundamentalInputs())["score"])
 
+class TestRhpEvidenceMapping(unittest.TestCase):
+
+    @staticmethod
+    def approved(value, unit=""):
+
+        return {
+            "value": value,
+            "unit": unit,
+            "status": "verified",
+            "approved": True,
+            "confidence": 0.95,
+            "evidence": [{
+                "page": 100,
+                "quote": "Verified source quotation."
+            }]
+        }
+
+
+    def test_unapproved_revenue_is_not_mapped(self):
+
+        fields = {
+
+            "revenue": {
+                **self.approved([
+                    {"period": "FY2023", "amount": 500},
+                    {"period": "FY2024", "amount": 650}
+                ]),
+                "approved": False
+            }
+
+        }
+
+        inputs, warnings = fundamental_inputs_from_evidence(
+            fields
+        )
+
+        self.assertIsNone(inputs.revenue)
+
+
+    def test_approved_revenue_and_pat_are_mapped(self):
+
+        fields = {
+
+            "revenue": self.approved([
+                {"period": "FY2023", "amount": 500},
+                {"period": "FY2024", "amount": 650},
+                {"period": "FY2025", "amount": 850}
+            ]),
+
+            "pat": self.approved([
+                {"period": "FY2023", "amount": 40},
+                {"period": "FY2024", "amount": 60},
+                {"period": "FY2025", "amount": 95}
+            ])
+
+        }
+
+        inputs, warnings = fundamental_inputs_from_evidence(
+            fields
+        )
+
+        self.assertEqual(
+            inputs.revenue,
+            [500.0, 650.0, 850.0]
+        )
+
+        self.assertEqual(
+            inputs.pat,
+            [40.0, 60.0, 95.0]
+        )
+
+
+    def test_mismatched_financial_periods_are_rejected(self):
+
+        fields = {
+
+            "revenue": self.approved([
+                {"period": "FY2023", "amount": 500},
+                {"period": "FY2024", "amount": 650}
+            ]),
+
+            "pat": self.approved([
+                {"period": "FY2022", "amount": 30},
+                {"period": "FY2023", "amount": 40}
+            ])
+
+        }
+
+        inputs, warnings = fundamental_inputs_from_evidence(
+            fields
+        )
+
+        self.assertIsNone(inputs.revenue)
+        self.assertIsNone(inputs.pat)
+
+        self.assertTrue(
+            any("periods do not match" in x for x in warnings)
+        )
+
+
+    def test_derived_financial_metrics(self):
+
+        fields = {
+
+            "revenue": self.approved([
+                {"period": "FY2024", "amount": 500},
+                {"period": "FY2025", "amount": 600}
+            ]),
+
+            "ebitda": self.approved([
+                {"period": "FY2024", "amount": 100},
+                {"period": "FY2025", "amount": 120}
+            ]),
+
+            "total_borrowings": self.approved([
+                {"period": "FY2024", "amount": 150},
+                {"period": "FY2025", "amount": 180}
+            ]),
+
+            "net_worth": self.approved([
+                {"period": "FY2024", "amount": 500},
+                {"period": "FY2025", "amount": 600}
+            ]),
+
+            "fresh_issue_amount": self.approved(
+                {"amount": 600, "unit": "INR crore"}
+            ),
+
+            "ofs_amount": self.approved(
+                {"amount": 400, "unit": "INR crore"}
+            )
+
+        }
+
+        inputs, warnings = fundamental_inputs_from_evidence(
+            fields
+        )
+
+        self.assertAlmostEqual(
+            inputs.ebitda_margin_pct,
+            20.0
+        )
+
+        self.assertAlmostEqual(
+            inputs.debt_to_equity,
+            0.30
+        )
+
+        self.assertAlmostEqual(
+            inputs.ofs_pct,
+            40.0
+        )
+
+
+    def test_manual_override_takes_precedence(self):
+
+        fields = {
+
+            "roe_pct": self.approved(18)
+
+        }
+
+        inputs, warnings = fundamental_inputs_from_evidence(
+            fields,
+            manual_overrides={
+                "roe_pct": 21
+            }
+        )
+
+        self.assertEqual(
+            inputs.roe_pct,
+            21
+        )
+
+
+    def test_invalid_pledge_percentage_is_rejected(self):
+
+        inputs = FundamentalInputs(
+            promoter_pledge_pct=120
+        )
+
+        errors = validate_fundamental_inputs(
+            inputs
+        )
+
+        self.assertTrue(
+            any(
+                "promoter_pledge_pct" in error
+                for error in errors
+            )
+        )
+
+        with self.assertRaises(ValueError):
+
+            score_fundamental(inputs)
 
 if __name__ == "__main__":
     unittest.main()

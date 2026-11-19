@@ -17,14 +17,35 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 REF = "A GMP only"
+
+ASINH_MODEL = "A2 GMP asinh/10"
+
 SPECS: Dict[str, List[str]] = {
     "A GMP only": ["gmp_pct_of_issue"],
+
+    # Same LogisticRegression algorithm, different GMP representation.
+    ASINH_MODEL: ["gmp_asinh10"],
+
     "S subscription only": ["log_total"],
     "B GMP + subscription": ["gmp_pct_of_issue", "log_total"],
-    "C B + size + market + momentum": ["gmp_pct_of_issue", "log_total", "log_issue_size",
-                                       "nifty_ret_20d", "recent_gain_mean10"],
-    "D C without GMP": ["log_total", "log_issue_size", "nifty_ret_20d", "recent_gain_mean10"],
-    "E size + market + momentum": ["log_issue_size", "nifty_ret_20d", "recent_gain_mean10"],
+    "C B + size + market + momentum": [
+        "gmp_pct_of_issue",
+        "log_total",
+        "log_issue_size",
+        "nifty_ret_20d",
+        "recent_gain_mean10"
+    ],
+    "D C without GMP": [
+        "log_total",
+        "log_issue_size",
+        "nifty_ret_20d",
+        "recent_gain_mean10"
+    ],
+    "E size + market + momentum": [
+        "log_issue_size",
+        "nifty_ret_20d",
+        "recent_gain_mean10"
+    ],
 }
 FLAG_RATES = (0.20, 0.35, 0.50)
 FLAT_BAND = 2.0
@@ -38,6 +59,38 @@ ZONES = {
 KEEP = ["listing_date", "company_name", "listing_year", "quarter", "y", "listing_gain_pct",
         "gmp_pct_of_issue", "log_total"]
 
+def add_gmp_transform(d: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add the deterministic asinh(GMP/10) feature.
+
+    Does not modify the raw GMP feature or the input DataFrame.
+    The transformation preserves zero, sign and ordering.
+    """
+
+    if "gmp_pct_of_issue" not in d.columns:
+        raise ValueError(
+            "Missing required column: gmp_pct_of_issue"
+        )
+
+    out = d.copy()
+
+    gmp = pd.to_numeric(
+        out["gmp_pct_of_issue"],
+        errors="coerce"
+    )
+
+    finite_values = gmp.dropna().to_numpy(dtype=float)
+
+    if not np.isfinite(finite_values).all():
+        raise ValueError(
+            "GMP contains infinite values. Clean the data before evaluation."
+        )
+
+    out["gmp_asinh10"] = np.arcsinh(
+        gmp.astype(float) / 10.0
+    )
+
+    return out
 
 # ---------------------------------------------------------------- data and folds
 def load_eval_frame(path, min_year: int = 2020) -> pd.DataFrame:
@@ -45,7 +98,9 @@ def load_eval_frame(path, min_year: int = 2020) -> pd.DataFrame:
     d = d[(d["listing_year"] >= min_year) & d["gmp_pct_of_issue"].notna() & d["log_total"].notna()].copy()
     d = d.sort_values(["listing_date", "company_name", "issue_price"], kind="stable").reset_index(drop=True)
     d["y"] = (d["listing_gain_pct"] > 0).astype(int)
-    d["quarter"] = d["listing_date"].dt.to_period("Q").astype(str)
+
+    d["quarter"] = (d["listing_date"].dt.to_period("Q").astype(str))
+    d = add_gmp_transform(d)
     return d
 
 
@@ -61,21 +116,85 @@ def make_model():
     return make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), LogisticRegression(max_iter=2000))
 
 
-def walk_forward(d: pd.DataFrame, test_years=range(2022, 2027), min_train: int = 40):
-    """Expanding window: each test year is predicted by models trained on strictly earlier years."""
-    preds, folds = [], []
+def walk_forward(
+    d: pd.DataFrame,
+    test_years=range(2022, 2027),
+    min_train: int = 40
+):
+    """
+    Expanding-window walk-forward validation.
+
+    All SPECS use identical train/test rows, years and targets.
+    Raw and transformed GMP use the same model factory.
+    """
+
+    d = add_gmp_transform(d)
+
+    preds = []
+    folds = []
+
     for yr in test_years:
-        tr, te = d[d["listing_year"] < yr], d[d["listing_year"] == yr]
-        if len(tr) < min_train or te.empty or tr["y"].nunique() < 2:
+
+        tr = d[
+            d["listing_year"] < yr
+        ]
+
+        te = d[
+            d["listing_year"] == yr
+        ]
+
+        if (
+            len(tr) < min_train
+            or te.empty
+            or tr["y"].nunique() < 2
+        ):
             continue
+
         out = te[KEEP].copy()
+
         out["p_prior"] = tr["y"].mean()
+
         for name, feats in SPECS.items():
-            out[f"p::{name}"] = make_model().fit(tr[feats], tr["y"]).predict_proba(te[feats])[:, 1]
+
+            model = make_model()
+
+            model.fit(
+                tr[feats],
+                tr["y"]
+            )
+
+            probabilities = model.predict_proba(
+                te[feats]
+            )[:, 1]
+
+            out[f"p::{name}"] = probabilities
+
         preds.append(out)
-        folds.append({"test_year": yr, "n_train": len(tr), "n_test": len(te),
-                      "train_max_date": tr["listing_date"].max(), "test_min_date": te["listing_date"].min()})
-    return pd.concat(preds, ignore_index=True), pd.DataFrame(folds)
+
+        folds.append({
+
+            "test_year": yr,
+
+            "n_train": len(tr),
+
+            "n_test": len(te),
+
+            "train_max_date": tr["listing_date"].max(),
+
+            "test_min_date": te["listing_date"].min(),
+
+        })
+
+    if not preds:
+
+        raise ValueError(
+            "No valid walk-forward folds were generated."
+        )
+
+    return (
+        pd.concat(preds, ignore_index=True),
+        pd.DataFrame(folds)
+    )
 
 
 # ---------------------------------------------------------------- metrics
@@ -114,28 +233,169 @@ def precision_at_recall(y, p, recall: float = 0.8) -> dict:
     return {"flag_rate": k / len(p), "precision_neg": float(cum[k - 1] / k)}
 
 
-def bootstrap_deltas(pred, ref: str, other: str, n_boot: int = 1000, seed: int = 42, by: Optional[str] = None) -> dict:
-    """Paired bootstrap of (other - ref) for AUC and Brier. `by` resamples whole blocks (e.g. quarters)."""
-    rng = np.random.default_rng(seed)
-    y, pr, po = pred["y"].to_numpy(), pred[ref].to_numpy(), pred[other].to_numpy()
+def bootstrap_deltas(
+    pred: pd.DataFrame,
+    ref: str,
+    other: str,
+    n_boot: int = 1000,
+    seed: int = 42,
+    by: Optional[str] = None
+) -> dict:
+    """
+    Paired bootstrap of other - reference.
+
+    Supports whole-block resampling, e.g. quarter.
+
+    Negative differences favour the candidate for:
+        Brier, log-loss, ECE
+
+    Positive differences favour the candidate for:
+        AUC, non-positive PR-AUC
+    """
+
+    if n_boot < 1:
+        raise ValueError("n_boot must be positive.")
+
+    required = {"y", ref, other}
+
+    if by is not None:
+        required.add(by)
+
+    missing = required - set(pred.columns)
+
+    if missing:
+        raise ValueError(
+            f"Missing bootstrap columns: {sorted(missing)}"
+        )
+
+    if pred.empty:
+        raise ValueError("Cannot bootstrap an empty DataFrame.")
+
+    y = pred["y"].to_numpy(dtype=int)
+
+    pr = pred[ref].to_numpy(dtype=float)
+
+    po = pred[other].to_numpy(dtype=float)
+
+    if np.unique(y).size < 2:
+        raise ValueError(
+            "Bootstrap evaluation requires both outcome classes."
+        )
+
+    metric_names = {
+        "dAUC": "auc",
+        "dPR_AUC_neg": "pr_auc_neg",
+        "dBrier": "brier",
+        "dLogloss": "logloss",
+        "dECE": "ece",
+    }
+
+    # Calculate the observed full-sample differences.
+    raw_ref = core_metrics(y, pr)
+    raw_other = core_metrics(y, po)
+
+    observed = {
+        key: raw_other[metric] - raw_ref[metric]
+        for key, metric in metric_names.items()
+    }
+
+    # Construct bootstrap blocks.
     if by is None:
-        blocks = [np.array([i]) for i in range(len(y))]
+
+        blocks = [
+            np.array([i])
+            for i in range(len(y))
+        ]
+
     else:
-        key = pred[by].to_numpy()
-        blocks = [np.where(key == g)[0] for g in pd.unique(key)]
-    dauc, dbr = [], []
+
+        keys = pred[by].to_numpy()
+
+        if pd.isna(keys).any():
+            raise ValueError(
+                f"Bootstrap grouping column {by!r} has missing values."
+            )
+
+        blocks = [
+            np.flatnonzero(keys == group)
+            for group in pd.unique(keys)
+        ]
+
+    if not blocks:
+        raise ValueError("No bootstrap blocks available.")
+
+    rng = np.random.default_rng(seed)
+
+    samples = {
+        name: []
+        for name in metric_names
+    }
+
     for _ in range(n_boot):
-        idx = np.concatenate([blocks[i] for i in rng.integers(0, len(blocks), len(blocks))])
-        yy = y[idx]
-        if yy.min() == yy.max():
+
+        selected_blocks = rng.integers(
+            0,
+            len(blocks),
+            size=len(blocks)
+        )
+
+        indices = np.concatenate([
+            blocks[i]
+            for i in selected_blocks
+        ])
+
+        yy = y[indices]
+
+        # AUC and average precision require both classes.
+        if np.unique(yy).size < 2:
             continue
-        dauc.append(roc_auc_score(yy, po[idx]) - roc_auc_score(yy, pr[idx]))
-        dbr.append(brier_score_loss(yy, po[idx]) - brier_score_loss(yy, pr[idx]))
-    lo_hi = lambda v: (float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5)))
-    return {"dAUC": roc_auc_score(y, po) - roc_auc_score(y, pr),
-            "dAUC_lo": lo_hi(dauc)[0], "dAUC_hi": lo_hi(dauc)[1],
-            "dBrier": brier_score_loss(y, po) - brier_score_loss(y, pr),
-            "dBrier_lo": lo_hi(dbr)[0], "dBrier_hi": lo_hi(dbr)[1], "reps": len(dauc)}
+
+        ref_metrics = core_metrics(
+            yy,
+            pr[indices]
+        )
+
+        other_metrics = core_metrics(
+            yy,
+            po[indices]
+        )
+
+        for key, metric in metric_names.items():
+
+            samples[key].append(
+                other_metrics[metric]
+                - ref_metrics[metric]
+            )
+
+    # Calculate confidence intervals.
+    result = {}
+
+    for name, values in samples.items():
+
+        if not values:
+            raise RuntimeError(
+                f"No valid bootstrap replicates for {name}."
+            )
+
+        low, high = np.percentile(
+            values,
+            [2.5, 97.5]
+        )
+
+        result[name] = observed[name]
+
+        result[f"{name}_lo"] = float(low)
+
+        result[f"{name}_hi"] = float(high)
+
+    result["reps"] = min(
+        len(values)
+        for values in samples.values()
+    )
+
+    result["requested_reps"] = n_boot
+
+    return result
 
 
 # ---------------------------------------------------------------- tables
@@ -254,7 +514,12 @@ def run_all(base_path, out_dir, fig_dir, labels=("strict", "clear_only"), n_boot
     for label in labels:
         pred, folds = walk_forward(apply_labels(base, label))
         pred.to_csv(out_dir / f"predictions_v3_{label}.csv", index=False)
-        reliability_plot(pred, [REF, "C B + size + market + momentum"], fig_dir / f"09_reliability_{label}.png")
+        reliability_plot(
+    pred,
+    [
+        REF,
+        ASINH_MODEL
+    ],fig_dir / f"09_reliability_{label}.png")
         parts.append(build_report(pred, folds, label, n_boot))
     text = "\n".join(parts)
     (out_dir / "scoreboard_v3.md").write_text(text, encoding="utf-8")

@@ -139,3 +139,43 @@ python -m pytest tests/ -v
 4. Generate paired `pre_close` and `post_close` snapshots in `ipo_features.csv`, actual listing results in `ipo_outcomes.csv`, and chronological quotes in `ipo_gmp_history.csv`.
 5. Run the Phase 2 validation engine on the completed dataset to ensure 100% compliance before proceeding to Phase 4 (EDA).
 
+## IPOVision 2.0 — Implementation Summary
+
+Date: 19 November 2026
+
+### Completed improvements
+
+1. Improved page-aware PDF extraction.
+2. Added financial-table-aware chunking.
+3. Improved existing hybrid retrieval.
+4. Integrated structured Gemini extraction.
+5. Added source quotation and page validation.
+6. Added financial-period and unit validation.
+7. Connected approved evidence to existing FundamentalInputs.
+8. Combined prospectus analysis and Q&A in IPO Research Workbench.
+9. Extended the existing Logistic Regression evaluation harness.
+10. Evaluated asinh(GMP/10) using walk-forward validation
+    and quarterly block bootstrap.
+
+### Production ML decision
+
+- Existing Logistic Regression retained.
+- Raw GMP remains the production feature.
+- Asinh transformation retained as an experimental candidate.
+- No new ML model families introduced.
+
+### Architecture
+
+- Existing BM25 + MiniLM + ChromaDB RAG architecture retained.
+- Existing Gemini provider retained.
+- Existing scoring weights preserved.
+- Existing application architecture modified in place.
+
+### Remaining limitations
+
+- Financial-table extraction requires manual verification.
+- Fundamental checklist weights are heuristic, not statistically validated.
+- Historical dataset provenance is not independently verified.
+- No prospective ML validation has been completed.
+
+

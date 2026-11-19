@@ -6,6 +6,7 @@ score is rescaled over the weight that could be scored (reported as `coverage`).
 """
 from __future__ import annotations
 
+import re
 import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
@@ -122,8 +123,625 @@ class FundamentalInputs:
     ofs_pct: Optional[float] = None                       # share of the issue that is an offer for sale
     use_of_funds_rating: Optional[float] = None           # 0-5
 
+# ------------------------------------------------------------------
+# RHP EVIDENCE MAPPING — uses the existing FundamentalInputs
+# ------------------------------------------------------------------
+
+def _evidence_approved(fields: dict, key: str):
+    """Return a field value only if evidence is verified and approved."""
+
+    item = fields.get(key)
+
+    if not isinstance(item, dict):
+        return None
+
+    if item.get("status") != "verified":
+        return None
+
+    if item.get("approved") is not True:
+        return None
+
+    return item.get("value")
+
+
+def _finite_number(value) -> bool:
+
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def _approved_number(fields: dict, key: str):
+    value = _evidence_approved(fields, key)
+
+    return (
+        float(value)
+        if _finite_number(value)
+        else None
+    )
+
+
+def _approved_series(
+    fields: dict,
+    key: str,
+    warnings: List[str]
+):
+    """Read an approved oldest-to-newest financial series."""
+
+    raw = _evidence_approved(fields, key)
+
+    if raw is None:
+        return None
+
+    if not isinstance(raw, list) or not raw:
+        warnings.append(f"{key}: invalid or empty financial series.")
+        return None
+
+    periods = []
+    values = []
+    years = []
+
+    for row in raw:
+
+        if not isinstance(row, dict):
+            warnings.append(f"{key}: invalid financial row.")
+            return None
+
+        period = row.get("period")
+        amount = row.get("amount")
+
+        if not isinstance(period, str) or not period.strip():
+            warnings.append(f"{key}: financial period is missing.")
+            return None
+
+        if not _finite_number(amount):
+            warnings.append(f"{key}: invalid amount for {period}.")
+            return None
+
+        match = re.search(r"(?:19|20)\d{2}", period)
+
+        if not match:
+            warnings.append(
+                f"{key}: unable to establish year order for {period}."
+            )
+            return None
+
+        periods.append(period.strip())
+        years.append(int(match.group()))
+        values.append(float(amount))
+
+    if len(set(periods)) != len(periods):
+        warnings.append(f"{key}: duplicate financial periods.")
+        return None
+
+    if years == sorted(years, reverse=True) and len(years) > 1:
+        orig_periods = list(periods)
+        periods = list(reversed(periods))
+        values = list(reversed(values))
+        years = list(reversed(years))
+        warnings.append(
+            f"{key}: periods were reported newest-to-oldest ({', '.join(orig_periods)}). "
+            f"Normalized into chronological order for scoring ({', '.join(periods)})."
+        )
+    elif years != sorted(years):
+        warnings.append(
+            f"{key}: ambiguous or non-chronological financial periods ({', '.join(periods)}). "
+            "Review the original financial table."
+        )
+        return None
+
+    return {
+        "periods": periods,
+        "values": values
+    }
+
+
+def _approved_amount(fields: dict, key: str):
+
+    raw = _evidence_approved(fields, key)
+
+    if not isinstance(raw, dict):
+        return None
+
+    amount = raw.get("amount")
+    unit = raw.get("unit")
+
+    if not _finite_number(amount):
+        return None
+
+    if not isinstance(unit, str) or not unit.strip():
+        return None
+
+    return {
+        "amount": float(amount),
+        "unit": unit.strip().casefold()
+    }
+
+
+def fundamental_inputs_from_evidence(
+    fields: dict,
+    manual_overrides: Optional[dict] = None
+):
+    """
+    Map approved, source-backed RHP evidence into FundamentalInputs.
+
+    Returns:
+        (FundamentalInputs, warnings)
+
+    Existing score_fundamental() remains the only scoring function.
+
+    Manual overrides take precedence over extracted fields.
+    """
+
+    fields = fields or {}
+    manual_overrides = manual_overrides or {}
+
+    warnings = []
+    values = {}
+
+    # --------------------------------------------------------------
+    # 1. Revenue and PAT — require matching reporting periods
+    # --------------------------------------------------------------
+
+    revenue_data = _approved_series(
+        fields,
+        "revenue",
+        warnings
+    )
+
+    pat_data = _approved_series(
+        fields,
+        "pat",
+        warnings
+    )
+
+    if revenue_data and pat_data:
+
+        if revenue_data["periods"] != pat_data["periods"]:
+
+            warnings.append(
+                "Revenue and PAT reporting periods do not match. "
+                "Both series have been excluded from automatic mapping."
+            )
+
+            revenue_data = None
+            pat_data = None
+
+    values["revenue"] = (
+        revenue_data["values"]
+        if revenue_data else None
+    )
+
+    values["pat"] = (
+        pat_data["values"]
+        if pat_data else None
+    )
+
+    # --------------------------------------------------------------
+    # 2. Directly disclosed numerical fields
+    # --------------------------------------------------------------
+
+    direct_fields = [
+        "ebitda_margin_pct",
+        "roe_pct",
+        "roce_pct",
+        "debt_to_equity",
+        "interest_coverage",
+        "promoter_holding_post_pct",
+        "promoter_pledge_pct",
+        "peer_ebitda_margin_pct",
+        "peer_roe_pct",
+        "peer_revenue_growth_pct",
+        "pe_ratio",
+        "peer_pe_ratio",
+        "ofs_pct",
+    ]
+
+    for field in direct_fields:
+
+        values[field] = _approved_number(
+            fields,
+            field
+        )
+
+    # --------------------------------------------------------------
+    # 3. EBITDA margin from matching EBITDA and revenue periods
+    # --------------------------------------------------------------
+
+    if values["ebitda_margin_pct"] is None:
+
+        ebitda_data = _approved_series(
+            fields,
+            "ebitda",
+            warnings
+        )
+
+        if revenue_data and ebitda_data:
+
+            latest_period = revenue_data["periods"][-1]
+
+            if ebitda_data["periods"][-1] == latest_period:
+
+                revenue_latest = revenue_data["values"][-1]
+                ebitda_latest = ebitda_data["values"][-1]
+
+                if revenue_latest > 0:
+
+                    values["ebitda_margin_pct"] = (
+                        ebitda_latest / revenue_latest
+                    ) * 100
+
+            else:
+
+                warnings.append(
+                    "EBITDA and revenue periods do not match. "
+                    "EBITDA margin was not calculated."
+                )
+
+    # --------------------------------------------------------------
+    # 4. Debt/equity from matching borrowings and net worth
+    # --------------------------------------------------------------
+
+    if values["debt_to_equity"] is None:
+
+        borrowing_data = _approved_series(
+            fields,
+            "total_borrowings",
+            warnings
+        )
+
+        net_worth_data = _approved_series(
+            fields,
+            "net_worth",
+            warnings
+        )
+
+        if borrowing_data and net_worth_data:
+
+            period = borrowing_data["periods"][-1]
+
+            if net_worth_data["periods"][-1] == period:
+
+                borrowings = borrowing_data["values"][-1]
+                net_worth = net_worth_data["values"][-1]
+
+                if borrowings >= 0 and net_worth > 0:
+
+                    values["debt_to_equity"] = (
+                        borrowings / net_worth
+                    )
+
+            else:
+
+                warnings.append(
+                    "Borrowings and net worth periods do not match. "
+                    "Debt/equity was not calculated."
+                )
+
+    # --------------------------------------------------------------
+    # 5. Latest operating cash flow
+    # --------------------------------------------------------------
+
+    cfo_value = _evidence_approved(
+        fields,
+        "cfo"
+    )
+
+    if isinstance(cfo_value, list):
+
+        cfo_data = _approved_series(
+            fields,
+            "cfo",
+            warnings
+        )
+
+        if cfo_data:
+
+            if pat_data:
+
+                if (
+                    cfo_data["periods"][-1]
+                    == pat_data["periods"][-1]
+                ):
+
+                    values["cfo"] = cfo_data["values"][-1]
+
+                else:
+
+                    values["cfo"] = None
+
+                    warnings.append(
+                        "Latest CFO and PAT periods do not match. "
+                        "CFO was not mapped."
+                    )
+
+            else:
+
+                values["cfo"] = cfo_data["values"][-1]
+
+        else:
+
+            values["cfo"] = None
+
+    elif _finite_number(cfo_value):
+
+        values["cfo"] = float(cfo_value)
+
+    else:
+
+        values["cfo"] = None
+
+    # --------------------------------------------------------------
+    # 5b. Operating inventory days
+    # --------------------------------------------------------------
+
+    inv_value = _evidence_approved(
+        fields,
+        "inventory_days"
+    )
+
+    if isinstance(inv_value, list):
+        inv_data = _approved_series(
+            fields,
+            "inventory_days",
+            warnings
+        )
+        if inv_data and inv_data["values"]:
+            values["inventory_days"] = inv_data["values"][-1]
+            if len(inv_data["values"]) >= 2:
+                values["inventory_days_prev"] = inv_data["values"][-2]
+    elif _finite_number(inv_value):
+        values["inventory_days"] = float(inv_value)
+
+    # --------------------------------------------------------------
+    # 6. OFS percentage from verified issue amounts
+    # --------------------------------------------------------------
+
+    if values["ofs_pct"] is None:
+
+        fresh = _approved_amount(
+            fields,
+            "fresh_issue_amount"
+        )
+
+        ofs = _approved_amount(
+            fields,
+            "ofs_amount"
+        )
+
+        if fresh and ofs:
+
+            if fresh["unit"] == ofs["unit"]:
+
+                total = (
+                    fresh["amount"] + ofs["amount"]
+                )
+
+                if total > 0 and fresh["amount"] >= 0 and ofs["amount"] >= 0:
+
+                    values["ofs_pct"] = (
+                        ofs["amount"] / total
+                    ) * 100
+
+            else:
+
+                warnings.append(
+                    "Fresh issue and OFS amount units differ. "
+                    "OFS percentage was not calculated."
+                )
+
+    # --------------------------------------------------------------
+    # 7. Manual judgement and manual corrections
+    # --------------------------------------------------------------
+
+    allowed_fields = set(
+        FundamentalInputs.__dataclass_fields__
+    )
+
+    unknown_fields = set(manual_overrides) - allowed_fields
+
+    if unknown_fields:
+
+        warnings.append(
+            "Unknown manual input fields ignored: "
+            + ", ".join(sorted(unknown_fields))
+        )
+
+    for key, value in manual_overrides.items():
+
+        if key in allowed_fields and value is not None:
+
+            values[key] = value
+
+    inputs = FundamentalInputs(**values)
+
+    validation_errors = validate_fundamental_inputs(
+        inputs
+    )
+
+    if validation_errors:
+
+        raise ValueError(
+            "Invalid fundamental inputs: "
+            + "; ".join(validation_errors)
+        )
+
+    return inputs, warnings
+
+
+# ------------------------------------------------------------------
+# INPUT VALIDATION — existing scoring interface preserved
+# ------------------------------------------------------------------
+
+def validate_fundamental_inputs(
+    inp: FundamentalInputs
+) -> List[str]:
+
+    errors = []
+
+    scalar_fields = [
+        "ebitda_margin_pct",
+        "roe_pct",
+        "roce_pct",
+        "debt_to_equity",
+        "interest_coverage",
+        "cfo",
+        "inventory_days",
+        "inventory_days_prev",
+        "business_quality_rating",
+        "management_rating",
+        "promoter_holding_post_pct",
+        "promoter_pledge_pct",
+        "litigation_severity",
+        "peer_ebitda_margin_pct",
+        "peer_roe_pct",
+        "peer_revenue_growth_pct",
+        "pe_ratio",
+        "peer_pe_ratio",
+        "ofs_pct",
+        "use_of_funds_rating",
+    ]
+
+    for name in scalar_fields:
+
+        value = getattr(inp, name)
+
+        if value is None:
+            continue
+
+        if not _finite_number(value):
+
+            errors.append(
+                f"{name} must be a finite number or None."
+            )
+
+    # Financial series
+    for name in ("revenue", "pat"):
+
+        series = getattr(inp, name)
+
+        if series is None:
+            continue
+
+        if isinstance(series, (str, bytes)):
+
+            errors.append(
+                f"{name} must be a numerical sequence."
+            )
+
+            continue
+
+        try:
+            items = list(series)
+        except TypeError:
+
+            errors.append(
+                f"{name} must be a numerical sequence."
+            )
+
+            continue
+
+        for index, value in enumerate(items):
+
+            if not _finite_number(value):
+
+                errors.append(
+                    f"{name}[{index}] is not a finite number."
+                )
+
+        if name == "revenue":
+
+            if any(
+                _finite_number(v) and v < 0
+                for v in items
+            ):
+
+                errors.append(
+                    "Revenue cannot be negative."
+                )
+
+    if (
+        inp.revenue is not None
+        and inp.pat is not None
+        and len(inp.revenue) != len(inp.pat)
+    ):
+
+        errors.append(
+            "Revenue and PAT must cover matching financial periods."
+        )
+
+    # Percentages that cannot exceed 100.
+    for name in (
+        "promoter_holding_post_pct",
+        "promoter_pledge_pct",
+        "ofs_pct"
+    ):
+
+        value = getattr(inp, name)
+
+        if _finite_number(value) and not 0 <= value <= 100:
+
+            errors.append(
+                f"{name} must be between 0 and 100."
+            )
+
+    # Existing subjective rating scale: 0-5.
+    for name in (
+        "business_quality_rating",
+        "management_rating",
+        "litigation_severity",
+        "use_of_funds_rating"
+    ):
+
+        value = getattr(inp, name)
+
+        if _finite_number(value) and not 0 <= value <= 5:
+
+            errors.append(
+                f"{name} must be between 0 and 5."
+            )
+
+    if (
+        _finite_number(inp.debt_to_equity)
+        and inp.debt_to_equity < 0
+    ):
+
+        errors.append(
+            "debt_to_equity cannot be negative."
+        )
+
+    for name in ("pe_ratio", "peer_pe_ratio"):
+
+        value = getattr(inp, name)
+
+        if _finite_number(value) and value <= 0:
+
+            errors.append(
+                f"{name} must be greater than zero."
+            )
+
+    for name in ("inventory_days", "inventory_days_prev"):
+
+        value = getattr(inp, name)
+
+        if _finite_number(value) and value < 0:
+
+            errors.append(
+                f"{name} cannot be negative."
+            )
+
+    return errors
 
 def score_fundamental(inp: FundamentalInputs) -> dict:
+    validation_errors = validate_fundamental_inputs(inp)
+    if validation_errors:
+        raise ValueError(
+            "Invalid fundamental inputs: "
+            + "; ".join(validation_errors)
+        )
+
     flags: List[str] = []
     rev, pat = _clean(inp.revenue), _clean(inp.pat)
     rc, pc = cagr(rev), cagr(pat)
@@ -206,7 +824,6 @@ def score_fundamental(inp: FundamentalInputs) -> dict:
     res["red_flags"] = flags
     res["metrics"] = {"revenue_cagr_pct": rc, "pat_cagr_pct": pc, "cfo_to_pat": ratio, "pe_premium_pct": premium}
     return res
-
 
 # ------------------------------------------------------------------ listing score
 @dataclass

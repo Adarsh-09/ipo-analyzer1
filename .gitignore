@@ -101,3 +101,17 @@ reports/evaluation/*
 Thumbs.db
 desktop.ini
 
+# Agent & Assistant metadata
+.agents/
+.claude/
+.virtual_documents/
+
+# Old environments & archives
+.venv_old/
+*.zip
+*.disabled
+
+# UI design mockups & reference assets
+UI enhance/
+
+

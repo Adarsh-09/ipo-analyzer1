@@ -12,9 +12,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.rag.answer import answer_question, build_prompt, check_citations, cited_pages
 from src.rag.chunk import chunk_pages
 from src.rag.embeddings import HashingEmbedder
-from src.rag.extract import clean_pages, extract_pages
+from src.rag.extract import (
+    clean_pages,
+    extract_pages,
+    _extract_tables,
+)
 from src.rag.index import build_index, collection_name, doc_id_from_path
 from src.rag.retrieve import HybridRetriever, rrf
+from src.rag.retrieve import (
+    HybridRetriever,
+    rrf,
+    expand_keyword_query,
+)
 
 PAGES = [
     "The company designs and manufactures industrial valves for oil and gas customers across India and exports to twenty countries.",
@@ -121,10 +130,176 @@ class TestRag(unittest.TestCase):
         self.assertEqual(b["mode"], "retrieval-only"); self.assertIn("quota", b["error"])
         self.assertEqual(answer_question("q", [], api_key="x")["mode"], "no-hits")
 
+    def test_table_extraction_preserves_financial_rows(self):
+        class FakeTable:
+            def extract(self):
+                return [
+                    ["Particulars", "FY2024", "FY2025"],
+                    ["Revenue", "500", "650"],
+                    ["PAT", "40", "95"],
+                ]
+
+        class FakePage:
+            def find_tables(self):
+                return SimpleNamespace(tables=[FakeTable()])
+
+        result = _extract_tables(FakePage())
+        self.assertIn("[TABLE 1 START]", result)
+        self.assertIn("Particulars | FY2024 | FY2025", result)
+        self.assertIn("Revenue | 500 | 650", result)
+        self.assertIn("[TABLE 1 END]", result)
+
+    def test_financial_table_headers_repeat_across_chunks(self):
+        rows = [
+            "Particulars | FY2023 | FY2024 | FY2025"
+        ]
+
+        rows.extend([
+            f"Row{i} | {i * 100} | {i * 110} | {i * 120}"
+            for i in range(1, 8)
+        ])
+
+        text = (
+            "[TABLE 1 START]\n"
+            + "\n".join(rows)
+            + "\n[TABLE 1 END]"
+        )
+
+        cleaned = clean_pages([
+            {
+                "page": 220,
+                "text": text
+            }
+        ])
+
+        chunks = chunk_pages(
+            cleaned,
+            "financial_test",
+            max_words=20,
+            overlap=3,
+            min_words=2
+        )
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertIn(
+                "Particulars | FY2023 | FY2024 | FY2025",
+                chunk["text"]
+            )
+            self.assertLessEqual(
+                len(chunk["text"].split()),
+                20
+            )
+
+    def test_cleanup_preserves_numeric_table_rows(self):
+        pages = []
+        for page_number in range(1, 7):
+            pages.append({
+                "page": page_number,
+                "text": (
+                    "IPO Prospectus Draft\n"
+                    "[TABLE 1 START]\n"
+                    "Particulars | FY2024\n"
+                    "Revenue | 500\n"
+                    "PAT | 95\n"
+                    "[TABLE 1 END]\n"
+                    f"Unique business discussion {page_number}"
+                )
+            })
+        cleaned = clean_pages(pages)
+        for page in cleaned:
+            self.assertNotIn(
+                "IPO Prospectus Draft",
+                page["text"]
+            )
+
+            self.assertIn(
+                "Revenue | 500",
+                page["text"]
+            )
+
+            self.assertIn(
+                "PAT | 95",
+                page["text"]
+            )
+
+            self.assertIn(
+                "\n",
+                page["text"]
+            )
+
     def test_names(self):
         self.assertEqual(doc_id_from_path("Data/My RHP (Final) v2.pdf"), "my_rhp_final_v2")
         self.assertRegex(collection_name("my_rhp_final_v2"), r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,61}[a-zA-Z0-9]$")
 
+    def test_financial_query_expansion(self):
+
+        expanded = expand_keyword_query(
+            "financial summary revenue and PAT"
+        ).lower()
+
+        self.assertIn("turnover", expanded)
+        self.assertIn("profit after tax", expanded)
+
+
+    def test_empty_query_returns_no_results(self):
+
+        self.assertEqual(
+            self.retriever.search(""),
+            []
+        )
+
+        self.assertEqual(
+            self.retriever.search("   "),
+            []
+        )
+
+    def test_statement_type_detection(self):
+        from src.rag.answer import _detect_statement_type
+        self.assertEqual(_detect_statement_type("Restated Consolidated Financial Information"), "consolidated")
+        self.assertEqual(_detect_statement_type("Standalone Balance Sheet Statement"), "standalone")
+        self.assertEqual(_detect_statement_type("General business discussion"), "unspecified")
+
+    def test_evidence_verification_normalization(self):
+        from src.rag.answer import _verify_extraction_evidence
+        page_texts = {10: 'The company reported revenue of "Rs. 500 crore" for FY2024 — an increase of 25%.'}
+        # Verify unicode smart quotes and em-dash normalization
+        ev = [{"page": 10, "quote": 'revenue of “Rs. 500 crore” for FY2024 – an increase'}]
+        res = _verify_extraction_evidence(ev, page_texts)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["page"], 10)
+
+        # String format verification
+        ev_str = ['Page 10: revenue of "Rs. 500 crore" for FY2024']
+        res_str = _verify_extraction_evidence(ev_str, page_texts)
+        self.assertEqual(len(res_str), 1)
+
+    def test_extraction_status_and_progress_metrics(self):
+        sample_results = {
+            "Topic1": {"fields": {"f1": {"status": "verified"}, "f2": {"status": "verified"}}},
+            "Topic2": {"fields": {"f3": {"status": "verified"}, "f4": {"status": "unverified"}}},
+            "Topic3": {"fields": {"f5": {"status": "invalid_json"}}},
+            "Topic4": {"fields": {"f6": {"status": "not_found"}}}
+        }
+        completed = []
+        partial = []
+        failed = []
+        for t, r in sample_results.items():
+            tf = r["fields"]
+            v = sum(1 for f in tf.values() if f.get("status") == "verified")
+            u = sum(1 for f in tf.values() if f.get("status") == "unverified")
+            m = sum(1 for f in tf.values() if f.get("status") in ("not_found", "not_generated"))
+            err = sum(1 for f in tf.values() if f.get("status") in ("invalid_json", "generation_error"))
+            if err > 0 or (u > 0 and v == 0):
+                failed.append(t)
+            elif u > 0 and v > 0:
+                partial.append(t)
+            elif v > 0 or m == len(tf):
+                completed.append(t)
+            else:
+                failed.append(t)
+        self.assertEqual(completed, ["Topic1", "Topic4"])
+        self.assertEqual(partial, ["Topic2"])
+        self.assertEqual(failed, ["Topic3"])
 
 if __name__ == "__main__":
     unittest.main()

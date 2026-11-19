@@ -6,8 +6,17 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.evaluation.harness import (apply_labels, bootstrap_deltas, ece, flag_metrics,
-                                    precision_at_recall, walk_forward)
+from src.evaluation.harness import (
+    apply_labels,
+    bootstrap_deltas,
+    ece,
+    flag_metrics,
+    precision_at_recall,
+    walk_forward,
+    add_gmp_transform,
+    REF,
+    ASINH_MODEL,
+)
 
 
 def make_frame(seed=0, n=420):
@@ -47,17 +56,146 @@ class TestHarness(unittest.TestCase):
 
     def test_bootstrap_is_reproducible_and_zero_for_identical_models(self):
         pred, _ = walk_forward(make_frame())
-        col = "p::A GMP only"
-        a = bootstrap_deltas(pred, col, col, n_boot=100, seed=7)
-        b = bootstrap_deltas(pred, col, col, n_boot=100, seed=7)
+        col = f"p::{REF}"
+
+        a = bootstrap_deltas(
+            pred,
+            col,
+            col,
+            n_boot=100,
+            seed=7,
+            by="quarter"
+        )
+
+        b = bootstrap_deltas(
+            pred,
+            col,
+            col,
+            n_boot=100,
+            seed=7,
+            by="quarter"
+        )
+
         self.assertEqual(a, b)
-        self.assertEqual((a["dAUC"], a["dBrier"]), (0.0, 0.0))
+
+        for metric in [
+            "dAUC",
+            "dPR_AUC_neg",
+            "dBrier",
+            "dLogloss",
+            "dECE"
+        ]:
+            self.assertAlmostEqual(a[metric], 0.0)
+            self.assertAlmostEqual(a[f"{metric}_lo"], 0.0)
+            self.assertAlmostEqual(a[f"{metric}_hi"], 0.0)
 
     def test_clear_only_drops_flat_listings(self):
         d = make_frame()
         d.loc[:9, "listing_gain_pct"] = 1.0
         self.assertTrue((apply_labels(d, "clear_only")["listing_gain_pct"].abs() > 2.0).all())
         self.assertEqual(len(apply_labels(d, "strict")), len(d))
+
+    def test_asinh_transform_preserves_sign_zero_and_order(self):
+        frame = pd.DataFrame({
+            "gmp_pct_of_issue": [
+                -100,
+                -50,
+                -10,
+                0,
+                10,
+                50,
+                100
+            ]
+        })
+
+        transformed = add_gmp_transform(frame)
+        values = transformed["gmp_asinh10"].to_numpy()
+
+        self.assertEqual(values[3], 0.0)
+        self.assertTrue(np.all(np.diff(values) > 0))
+        self.assertTrue(
+            np.all(
+                np.sign(frame["gmp_pct_of_issue"])
+                == np.sign(values)
+            )
+        )
+
+        # The raw feature must remain unchanged.
+        np.testing.assert_array_equal(
+            frame["gmp_pct_of_issue"].to_numpy(),
+            transformed["gmp_pct_of_issue"].to_numpy()
+        )
+
+    def test_walk_forward_generates_asinh_predictions(self):
+        frame = make_frame()
+        pred, _ = walk_forward(frame)
+
+        raw_col = f"p::{REF}"
+        asinh_col = f"p::{ASINH_MODEL}"
+
+        self.assertIn(raw_col, pred.columns)
+        self.assertIn(asinh_col, pred.columns)
+        self.assertEqual(
+            len(pred[raw_col]),
+            len(pred[asinh_col])
+        )
+        self.assertTrue(pred[asinh_col].notna().all())
+        self.assertTrue(pred[asinh_col].between(0, 1).all())
+
+    def test_raw_and_asinh_use_identical_walk_forward_rows(self):
+        frame = make_frame()
+        pred, folds = walk_forward(frame)
+
+        self.assertEqual(
+            len(pred),
+            int(folds["n_test"].sum())
+        )
+        self.assertTrue(
+            pred["listing_year"].isin(
+                range(2022, 2027)
+            ).all()
+        )
+
+    def test_quarter_bootstrap_reports_all_metrics(self):
+        pred, _ = walk_forward(make_frame())
+        result = bootstrap_deltas(
+            pred,
+            f"p::{REF}",
+            f"p::{ASINH_MODEL}",
+            n_boot=200,
+            seed=42,
+            by="quarter"
+        )
+
+        expected = [
+            "dAUC",
+            "dPR_AUC_neg",
+            "dBrier",
+            "dLogloss",
+            "dECE",
+        ]
+
+        for metric in expected:
+            self.assertIn(metric, result)
+            self.assertIn(f"{metric}_lo", result)
+            self.assertIn(f"{metric}_hi", result)
+            self.assertLessEqual(
+                result[f"{metric}_lo"],
+                result[f"{metric}_hi"]
+            )
+
+        self.assertGreater(result["reps"], 0)
+
+    def test_invalid_gmp_values_are_rejected(self):
+        frame = pd.DataFrame({
+            "gmp_pct_of_issue": [
+                10.0,
+                np.inf
+            ]
+        })
+
+        with self.assertRaises(ValueError):
+            add_gmp_transform(frame)
 
 
 if __name__ == "__main__":
