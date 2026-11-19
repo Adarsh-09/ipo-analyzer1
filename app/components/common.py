@@ -203,6 +203,93 @@ def apply_candy_theme() -> None:
         color: #a02070 !important;
     }
 
+    /* Progress Bar */
+    div[data-testid="stProgress"] > div > div > div > div {
+        background: linear-gradient(90deg, #e040a0, #7c52aa) !important;
+        border-radius: 9999px !important;
+    }
+
+    /* Alerts */
+    div[data-testid="stAlert"] {
+        border-radius: 14px !important;
+        font-size: 0.92rem !important;
+        border-width: 1px !important;
+    }
+
+    /* Sidebar Navigation */
+    section[data-testid="stSidebar"] {
+        border-right: 1px solid #ece2ec !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] li a {
+        border-radius: 9999px !important;
+        padding: 8px 16px !important;
+        margin-bottom: 4px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] li a:hover {
+        background-color: #f8eef8 !important;
+        color: #e040a0 !important;
+        transform: translateX(3px) !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] li a[aria-current="page"] {
+        background-color: #ffd6ee !important;
+        color: #a02070 !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(224, 64, 160, 0.15) !important;
+    }
+
+    /* Stepper Cards */
+    .candy-stepper-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        margin-bottom: 1.5rem;
+    }
+    .candy-step-card {
+        background: #ffffff;
+        border: 1px solid #ece2ec;
+        border-radius: 12px;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: all 0.2s ease;
+    }
+    .candy-step-card.active {
+        border-color: #e040a0;
+        background: #fdf5fc;
+        box-shadow: 0 2px 10px rgba(224, 64, 160, 0.12);
+    }
+    .candy-step-num {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 12px;
+        background: #eedcff;
+        color: #4a3068;
+    }
+    .candy-step-card.active .candy-step-num {
+        background: #e040a0;
+        color: #ffffff;
+    }
+    .candy-step-text {
+        font-size: 13px;
+        font-weight: 600;
+        color: #2e1a28;
+    }
+    .candy-step-desc {
+        font-size: 11px;
+        color: #907898;
+    }
+
     /* Header Banner */
     .candy-header-banner {
         margin-bottom: 1.5rem;
@@ -290,6 +377,25 @@ def page_header(
       {sub_row}
     </div>
     """
+    if hasattr(st, "html"):
+        st.html(html)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
+
+def workflow_stepper(steps: list[tuple[str, str]], active_idx: int = 1) -> None:
+    """Render a visual horizontal stepper component for multi-stage workflows."""
+    cards_html = []
+    for idx, (step_title, step_desc) in enumerate(steps, start=1):
+        is_active = (idx == active_idx)
+        active_cls = "active" if is_active else ""
+        cards_html.append(
+            f'<div class="candy-step-card {active_cls}">'
+            f'<div class="candy-step-num">{idx}</div>'
+            f'<div><div class="candy-step-text">{step_title}</div><div class="candy-step-desc">{step_desc}</div></div>'
+            f'</div>'
+        )
+    html = f'<div class="candy-stepper-grid">{"".join(cards_html)}</div>'
     if hasattr(st, "html"):
         st.html(html)
     else:

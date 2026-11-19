@@ -18,7 +18,12 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-from app.components.common import apply_candy_theme, footer, page_header
+from app.components.common import (
+    apply_candy_theme,
+    footer,
+    page_header,
+    workflow_stepper,
+)
 
 from src.rag.index import (
     RAG_DIR,
@@ -247,7 +252,15 @@ pdf_files = sorted(
 )
 
 if not pdf_files:
-
+    workflow_stepper(
+        [
+            ("1. Ingestion & Index", "Upload and index RHP PDF"),
+            ("2. RAG Extraction", "Extract 9 statutory sections"),
+            ("3. Evidence Review", "Verify citations & approve"),
+            ("4. Scoring & Q&A", "Fundamental score & Q&A"),
+        ],
+        active_idx=1,
+    )
     st.info(
         "Upload an RHP/DRHP PDF to begin."
     )
@@ -265,6 +278,27 @@ selected_pdf = st.selectbox(
 
 
 doc_id = doc_id_from_path(selected_pdf)
+extraction_key = f"ipovision_extraction_{doc_id}"
+
+existing_ext = st.session_state.get(extraction_key)
+if not index_exists(doc_id):
+    active_step = 1
+elif existing_ext is None:
+    active_step = 2
+elif any(f.get("approved") for f in existing_ext.get("fields", {}).values()):
+    active_step = 4
+else:
+    active_step = 3
+
+workflow_stepper(
+    [
+        ("1. Ingestion & Index", "Upload and index RHP PDF"),
+        ("2. RAG Extraction", "Extract 9 statutory sections"),
+        ("3. Evidence Review", "Verify citations & approve"),
+        ("4. Scoring & Q&A", "Fundamental score & Q&A"),
+    ],
+    active_idx=active_step,
+)
 
 
 # ---------------------------------------------------------
@@ -586,20 +620,32 @@ with analysis_tab:
                         {}
                     )
 
-                    st.subheader(
-                        field_name.replace("_", " ").title()
-                    )
-
                     status = item.get(
                         "status",
                         "not_found"
                     )
                     validation_reason = item.get("validation_reason")
 
+                    status_badge = {
+                        "verified": '<span class="candy-badge candy-badge-success">✓ Verified</span>',
+                        "unverified": '<span class="candy-badge candy-badge-warning">⚠ Unverified</span>',
+                        "not_found": '<span class="candy-badge candy-badge-secondary">Not Found</span>',
+                        "invalid_json": '<span class="candy-badge candy-badge-error">Invalid JSON</span>',
+                        "generation_error": '<span class="candy-badge candy-badge-error">Error</span>',
+                    }.get(status, '<span class="candy-badge candy-badge-secondary">Pending</span>')
+
+                    st.markdown(
+                        f"<div style='display: flex; align-items: center; justify-content: space-between; margin-top: 1.2rem; margin-bottom: 0.4rem;'>"
+                        f"<h4 style='margin: 0; color: #2e1a28;'>{field_name.replace('_', ' ').title()}</h4>"
+                        f"{status_badge}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
                     if status == "verified":
 
                         st.success(
-                            "Source quotation verified"
+                            "Source quotation verified against retrieved document excerpts."
                         )
 
                     elif status == "not_found":
@@ -679,8 +725,10 @@ with analysis_tab:
                     ):
 
                         st.markdown(
-                            f"> **Page {evidence['page']}** — "
-                            f"{evidence['quote']}"
+                            f"<div style='background: #fdfafd; border-left: 3px solid #e040a0; padding: 8px 12px; border-radius: 0 8px 8px 0; margin-bottom: 6px; font-size: 0.88rem; color: #4a3068;'>"
+                            f"<strong style='color: #a02070;'>Page {evidence['page']}</strong> — <em>\"{evidence['quote']}\"</em>"
+                            f"</div>",
+                            unsafe_allow_html=True,
                         )
 
                     approve_key = (
@@ -955,19 +1003,31 @@ with qa_tab:
             )
 
 
-        st.markdown(
-            response["answer"]
+        cited_badges = (
+            " ".join(
+                f'<span class="candy-badge candy-badge-tertiary">Page {p}</span>'
+                for p in response.get("pages", [])
+            )
+            if response.get("pages")
+            else '<span style="color: #907898;">None cited</span>'
         )
 
-        st.caption(
-            f"Mode: {response['mode']} | Pages: "
-            + (
-                ", ".join(
-                    map(str, response["pages"])
-                )
-                if response["pages"]
-                else "None"
-            )
+        st.markdown(
+            f"""
+            <div class="candy-card" style="margin-top: 1rem; border-color: #dcc8e0;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                <span class="candy-badge candy-badge-primary">Grounded Response</span>
+                <span style="font-size: 11px; color: #7c52aa; font-weight: 600; text-transform: uppercase;">Engine: {response.get('mode', 'rag')}</span>
+              </div>
+              <div style="font-size: 0.96rem; line-height: 1.65; color: #2e1a28; margin-bottom: 14px;">
+                {response["answer"]}
+              </div>
+              <div style="border-top: 1px solid #f0e6f0; padding-top: 10px; font-size: 12px; color: #7c52aa; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <strong>Cited Pages:</strong> {cited_badges}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
 

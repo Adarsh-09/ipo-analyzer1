@@ -107,11 +107,11 @@ flowchart TD
         VerifiedFields --> StreamlitApp
         
         StreamlitApp --> PageHome["Home.py (Executive Overview & Trends)"]
-        StreamlitApp --> PagePredict["1_predict.py (Predictive Engine & Risk Bands)"]
-        StreamlitApp --> PageExplorer["2_explorer.py (Cohort Explorer & Scatter)"]
-        StreamlitApp --> PagePerf["3_model_performance.py (Walk-Forward Scoreboard)"]
-        StreamlitApp --> PageAbout["4_about.py (Methodology & Disclaimers)"]
-        StreamlitApp --> PageWorkbench["7_ipo_research_workbench.py (RHP RAG & Scoring)"]
+        StreamlitApp --> PagePredict["1_Predict.py (Predictive Engine & Risk Bands)"]
+        StreamlitApp --> PageExplorer["2_Explorer.py (Cohort Explorer & Scatter)"]
+        StreamlitApp --> PagePerf["3_Model_Performance.py (Walk-Forward Scoreboard)"]
+        StreamlitApp --> PageWorkbench["4_Prospectus_Workbench.py (RHP RAG & Scoring)"]
+        StreamlitApp --> PageAbout["5_About.py (Methodology & Disclaimers)"]
     end
 ```
 
@@ -364,11 +364,11 @@ app/
 │   ├── __init__.py
 │   └── common.py                       # Global theme injector, headers, Plotly styles, footer
 └── pages/
-    ├── 1_predict.py                    # Predictive engine, risk band chips, probability progress
-    ├── 2_explorer.py                   # Multi-filter cohort explorer, GMP vs gain scatter plot
-    ├── 3_model_performance.py          # Walk-forward validation scoreboard, reliability curve
-    ├── 4_about.py                      # Methodology, bento cards, data provenance, limitations
-    └── 7_ipo_research_workbench.py     # Prospectus upload, RAG extraction, review & scoring
+    ├── 1_Predict.py                    # Predictive engine, risk band chips, probability progress
+    ├── 2_Explorer.py                   # Multi-filter cohort explorer, GMP vs gain scatter plot
+    ├── 3_Model_Performance.py          # Walk-forward validation scoreboard, reliability curve
+    ├── 4_Prospectus_Workbench.py       # Prospectus upload, RAG extraction, review & scoring
+    └── 5_About.py                      # Methodology, bento cards, data provenance, limitations
 ```
 
 ### A. UI Design System Tokens ([`DESIGN.md`](file:///e:/projects/ipo-analyzer1/UI%20enhance/DESIGN.md))
@@ -442,11 +442,11 @@ E:\projects\ipo-analyzer1\
 │   │   ├── __init__.py
 │   │   └── common.py                   # Shared theme styles, Plotly layout, and footer
 │   └── pages/
-│       ├── 1_predict.py                # Prediction engine, probability progress & risk bands
-│       ├── 2_explorer.py               # Filterable historical cohort explorer & scatter chart
-│       ├── 3_model_performance.py      # Walk-forward scoreboard & reliability curves
-│       ├── 4_about.py                  # Methodology, bento cards & project limitations
-│       └── 7_ipo_research_workbench.py # Prospectus upload, RAG extraction & scoring
+│       ├── 1_Predict.py                # Prediction engine, probability progress & risk bands
+│       ├── 2_Explorer.py               # Filterable historical cohort explorer & scatter chart
+│       ├── 3_Model_Performance.py      # Walk-forward scoreboard & reliability curves
+│       ├── 4_Prospectus_Workbench.py   # Prospectus upload, RAG extraction & scoring
+│       └── 5_About.py                  # Methodology, bento cards & project limitations
 │
 ├── config/                             # Centralized Settings
 │   ├── settings.example.yaml

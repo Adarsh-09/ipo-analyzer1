@@ -73,47 +73,51 @@ if not s.empty:
             color_discrete_map={"Positive": "#16a34a", "Flat or lower": "#e53e3e"},
         )
         lim = [float(s["gmp_pct"].min()), float(s["gmp_pct"].max())]
-        fig.add_shape(
-            type="line",
-            x0=lim[0],
-            y0=lim[0],
-            x1=lim[1],
-            y1=lim[1],
-            line=dict(dash="dash", color="#7c52aa", width=1.5),
-        )
+        if lim[0] < lim[1]:
+            fig.add_shape(
+                type="line",
+                x0=lim[0],
+                y0=lim[0],
+                x1=lim[1],
+                y1=lim[1],
+                line=dict(dash="dash", color="#7c52aa", width=1.5),
+            )
         candy_plotly_layout(fig, title="Final GMP vs actual listing gain", height=420)
         st.plotly_chart(fig, width="stretch")
 
 st.subheader("Cohort listings")
-view = (
-    f[
-        [
-            "company_name",
-            "listing_date",
-            "issue_price",
-            "issue_size_cr",
-            "overall_subscription",
-            "gmp",
-            "gmp_pct",
-            "listing_open_price",
-            "listing_gain_pct",
-            "outcome",
+if f.empty:
+    st.info("No historical IPOs match the selected filter criteria. Try expanding the listing year range or clearing search filters in the sidebar.")
+else:
+    view = (
+        f[
+            [
+                "company_name",
+                "listing_date",
+                "issue_price",
+                "issue_size_cr",
+                "overall_subscription",
+                "gmp",
+                "gmp_pct",
+                "listing_open_price",
+                "listing_gain_pct",
+                "outcome",
+            ]
         ]
-    ]
-    .sort_values("listing_date", ascending=False)
-    .round(2)
-)
-view["listing_date"] = view["listing_date"].dt.strftime("%Y-%m-%d")
+        .sort_values("listing_date", ascending=False)
+        .round(2)
+    )
+    view["listing_date"] = view["listing_date"].dt.strftime("%Y-%m-%d")
 
-st.dataframe(view, hide_index=True, width="stretch")
+    st.dataframe(view, hide_index=True, width="stretch")
 
-st.download_button(
-    label="Export filtered cohort (CSV)",
-    data=view.to_csv(index=False).encode("utf-8"),
-    file_name="ipovision_filtered.csv",
-    mime="text/csv",
-    icon=":material/download:",
-    width="stretch",
-)
+    st.download_button(
+        label="Export filtered cohort (CSV)",
+        data=view.to_csv(index=False).encode("utf-8"),
+        file_name="ipovision_filtered.csv",
+        mime="text/csv",
+        icon=":material/download:",
+        width="stretch",
+    )
 
 footer()

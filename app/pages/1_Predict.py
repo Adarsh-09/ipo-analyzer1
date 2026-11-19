@@ -40,7 +40,15 @@ with left:
         has_gmp = st.checkbox("I have a current GMP", value=True)
         gmp_pct = None
         if has_gmp:
-            mode = st.radio("GMP entered as", ["₹ per share", "% of issue price"], horizontal=True)
+            if hasattr(st, "segmented_control"):
+                mode = st.segmented_control(
+                    "GMP entered as",
+                    ["₹ per share", "% of issue price"],
+                    default="₹ per share",
+                    key="gmp_mode_select",
+                ) or "₹ per share"
+            else:
+                mode = st.radio("GMP entered as", ["₹ per share", "% of issue price"], horizontal=True)
             gmp_val = st.number_input("GMP", value=10.0, step=1.0)
             gmp_pct = gmp_val / issue_price * 100 if mode == "₹ per share" else gmp_val
             st.caption(f"= **{gmp_pct:.1f}%** of the issue price")
@@ -79,12 +87,24 @@ with right:
 
         if res["gain_interval_pct"]:
             lo, hi = res["gain_interval_pct"]
-            st.write(f"**80% range for the listing gain:** `{lo:.0f}%` to `{hi:.0f}%`")
-            if res["price_interval"]:
-                st.write(
-                    f"**Implied listing price:** `₹{res['implied_listing_price']:.2f}` "
-                    f"(80% range `₹{res['price_interval'][0]:.2f}` to `₹{res['price_interval'][1]:.2f}`)"
-                )
+            implied_row = (
+                f"<div style='display: flex; justify-content: space-between; align-items: baseline;'>"
+                f"<span style='font-size: 12px; font-weight: 600; text-transform: uppercase; color: #7c52aa;'>Implied Debut Price</span>"
+                f"<span style='font-size: 15px; font-weight: 700; color: #e040a0;'>₹{res['implied_listing_price']:.2f} "
+                f"<span style='font-size: 12px; font-weight: 500; color: #907898;'>(80% range ₹{res['price_interval'][0]:.2f} - ₹{res['price_interval'][1]:.2f})</span></span></div>"
+                if res.get("price_interval")
+                else ""
+            )
+            card_html = f"""
+            <div style="background: #ffffff; border: 1px solid #ece2ec; border-radius: 14px; padding: 14px 18px; margin: 12px 0; box-shadow: 0 2px 8px rgba(124, 82, 170, 0.05);">
+              <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: #7c52aa;">80% Listing Gain Range</span>
+                <span style="font-size: 16px; font-weight: 700; color: #2e1a28;">{lo:+.0f}% to {hi:+.0f}%</span>
+              </div>
+              {implied_row}
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
 
         for note in res["notes"]:
             st.warning(note)
@@ -133,5 +153,41 @@ if gmp_pct is not None:
         .round(1)
     )
     st.dataframe(view, hide_index=True, width="stretch")
+elif total_sub is not None:
+    st.write("")
+    st.subheader("Similar subscription cohorts")
+    st.caption("Historical IPOs with similar demand multiples:")
+    near_sub = (
+        d.dropna(subset=["overall_subscription"])
+        .assign(diff=lambda x: (x["overall_subscription"] - total_sub).abs())
+        .nsmallest(8, "diff")
+    )
+    view_sub = (
+        near_sub[
+            [
+                "company_name",
+                "listing_date",
+                "issue_price",
+                "overall_subscription",
+                "listing_gain_pct",
+                "outcome",
+            ]
+        ]
+        .rename(
+            columns={
+                "company_name": "Company",
+                "listing_date": "Listing date",
+                "issue_price": "Issue price (₹)",
+                "overall_subscription": "Total sub (x)",
+                "listing_gain_pct": "Actual gain %",
+                "outcome": "Outcome",
+            }
+        )
+        .round(1)
+    )
+    st.dataframe(view_sub, hide_index=True, width="stretch")
+else:
+    st.write("")
+    st.info("💡 Provide a GMP or subscription figure above to view matching historical IPO cohorts.")
 
 footer()
