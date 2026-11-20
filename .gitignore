@@ -81,6 +81,7 @@ data/raw/*
 data/interim/*
 !data/interim/.gitkeep
 !data/interim/kaggle/
+data/interim/kaggle/*
 !data/interim/kaggle/model_base_v3.csv
 data/processed/*
 !data/processed/.gitkeep

@@ -1,10 +1,12 @@
 # ==============================================================================
-# IPOVision — Dependencies
-# Target Python Version: 3.11 or 3.12 (Recommended for ML/RAG wheel compatibility)
+# IPOVision — Production Streamlit Cloud Dependencies
 # ==============================================================================
 
+# Fast CPU-only PyTorch index (prevents downloading 4GB+ of unnecessary NVIDIA CUDA drivers)
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # Core Data Engineering & Computation
-numpy>=1.26.0,<2.1.0
+numpy>=1.26.0,<2.2.0
 pandas>=2.1.0,<3.0.0
 scipy>=1.11.0
 
@@ -28,23 +30,16 @@ plotly>=5.18.0
 streamlit>=1.30.0
 
 # Document Intelligence & RHP/DRHP RAG Engine
-PyMuPDF>=1.23.0             # High-performance PDF text & metadata extraction
-pdfplumber>=0.10.0          # Structured table extraction from PDFs
-chromadb>=0.4.22            # Vector database for semantic chunk retrieval
-sentence-transformers>=2.3.0 # Local multilingual embeddings
-rank-bm25>=0.2.2            # Keyword/BM25 retrieval for hybrid search
-google-genai>=1.0.0         # Google Gemini API client for LLM reasoning
-anthropic>=0.40.0            # Anthropic API client
+torch>=2.0.0
+sentence-transformers>=2.3.0
+PyMuPDF>=1.23.0
+pdfplumber>=0.10.0
+chromadb>=0.4.22
+rank-bm25>=0.2.2
+google-genai>=1.0.0
+anthropic>=0.40.0
 
 # Configuration & Utilities
 pyyaml>=6.0.1
 python-dotenv>=1.0.0
 pydantic>=2.5.0
-
-# Testing & Quality Assurance
-pytest>=7.4.0
-pytest-cov>=4.1.0
-
-# Notebook Exploration Environment
-jupyter>=1.0.0
-ipykernel>=6.26.0
