@@ -27,7 +27,15 @@ def get_llm_settings(load_env: bool = True) -> Dict:
             load_dotenv(Path(__file__).resolve().parents[2] / ".env")
         except Exception:
             pass
-    env = os.environ
+    env = dict(os.environ)
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets"):
+            for k, v in st.secrets.items():
+                if isinstance(v, str) and k not in env:
+                    env[k] = v
+    except Exception:
+        pass
     gem = env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY")
     ant = env.get("ANTHROPIC_API_KEY")
     provider = (env.get("LLM_PROVIDER") or "").strip().lower() or (
