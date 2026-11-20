@@ -2,13 +2,16 @@
 # IPOVision — Production Streamlit Cloud Dependencies
 # ==============================================================================
 
+# Force precompiled binary wheels (prevents slow, resource-heavy compilation from source)
+--prefer-binary
+
 # Fast CPU-only PyTorch index (prevents downloading 4GB+ of unnecessary NVIDIA CUDA drivers)
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Core Data Engineering & Computation
-numpy>=1.26.0,<2.2.0
+# Core Data Engineering & Computation (NumPy <2.1.0 provides prebuilt wheels for Python 3.10, 3.11, 3.12)
+numpy>=1.26.0,<2.1.0
 pandas>=2.1.0,<3.0.0
-scipy>=1.11.0
+scipy>=1.11.0,<1.15.0
 
 # Data Collection & Scraping
 requests>=2.31.0
